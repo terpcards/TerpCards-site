@@ -1,0 +1,7 @@
+# Copy this file to .dev.vars for local testing (npm run check / npm run dev).
+# .dev.vars is git-ignored, so your keys never end up on GitHub.
+# On Cloudflare, add these two as secrets instead (see README, step 4).
+
+# From developer.ebay.com > Application Keys > Production keyset
+EBAY_CLIENT_ID=your-app-id
+EBAY_CLIENT_SECRET=your-cert-id

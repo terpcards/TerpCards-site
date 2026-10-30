@@ -1,0 +1,658 @@
+// ---------------------------------------------------------------------------
+// Edit these to match your accounts. Leave a URL empty to hide its links.
+// ---------------------------------------------------------------------------
+const SITE = {
+  ebaySeller: 'terpcards',
+  ebayStoreUrl: 'https://www.ebay.com/str/terpcards',   // every eBay link on the page goes here
+  whatnotUrl: 'https://www.whatnot.com/user/terpcards',
+  youtubeUrl: '',   // e.g. 'https://www.youtube.com/@yourchannel'
+  instagramUrl: 'https://www.instagram.com/terpcards/',
+  xUrl: 'https://x.com/TerpCards',
+
+  // Weekly Whatnot show. weekday: 0 = Sunday ... 3 = Wednesday.
+  show: { weekday: 3, hour: 17, minute: 30, timeZone: 'America/New_York', lengthMinutes: 120 },
+
+  apiUrl: '/api/listings',
+  contactUrl: '/api/contact',
+
+  // When the eBay feed has no listings to give (no API keys yet, or a long eBay outage):
+  //   'local' = show sample cards only when you open the site on your own computer,
+  //             and a "Shop my eBay store" section everywhere else (recommended)
+  //   true    = always show sample cards     false = never show them
+  sampleWhenOffline: 'local',
+};
+
+// True when the page is opened from your computer rather than your real domain.
+function isLocalPreview() {
+  const host = location.hostname;
+  return location.protocol === 'file:' || host === '' || host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+}
+
+function useSamples() {
+  return SITE.sampleWhenOffline === true || (SITE.sampleWhenOffline === 'local' && isLocalPreview());
+}
+
+// ---------------------------------------------------------------------------
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+const state = {
+  items: [],
+  filter: 'all',
+  query: '',
+  sort: 'new',
+  sellerUrl: '',
+  updatedAt: null,
+  sample: false,
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  $('[data-year]').textContent = new Date().getFullYear();
+  wireLinks();
+  startShowClock();
+  bindCalendar();
+  showSkeletons(8);
+  bindControls();
+  bindContactForm();
+  loadListings();
+});
+
+// ---------- Links ----------
+
+function sellerUrl(seller) {
+  return seller ? `https://www.ebay.com/sch/i.html?_ssn=${encodeURIComponent(seller)}` : '';
+}
+
+// Your eBay Store page if set, otherwise a search for everything you have listed.
+function ebayLink() {
+  return SITE.ebayStoreUrl || state.sellerUrl || sellerUrl(SITE.ebaySeller);
+}
+
+function wireLinks() {
+  const urls = {
+    ebay: ebayLink(),
+    whatnot: SITE.whatnotUrl,
+    youtube: SITE.youtubeUrl,
+    instagram: SITE.instagramUrl,
+    x: SITE.xUrl,
+  };
+  for (const el of $$('[data-link]')) {
+    const url = urls[el.dataset.link];
+    if (url) {
+      el.href = url;
+      el.hidden = false;
+    } else {
+      el.hidden = true;
+    }
+  }
+  // The offer note and "message directly" line only make sense with X or Instagram set.
+  const hasSocial = Boolean(SITE.xUrl || SITE.instagramUrl);
+  for (const el of $$('[data-needs-social]')) el.hidden = !hasSocial;
+}
+
+// ---------- Contact form ----------
+
+function bindContactForm() {
+  const form = $('[data-contact-form]');
+  if (!form) return;
+  const status = $('[data-form-status]');
+  const button = $('[data-contact-submit]');
+  const topic = $('[data-topic-select]');
+  const shownAt = performance.now();
+
+  // Links like "Or use the contact form" preselect the topic.
+  for (const link of $$('a[data-topic]')) {
+    link.addEventListener('click', () => {
+      topic.value = link.dataset.topic;
+      setTimeout(() => form.querySelector('[name="contact"]').focus({ preventScroll: true }), 400);
+    });
+  }
+
+  const setStatus = (state, ...parts) => {
+    status.dataset.state = state;
+    status.replaceChildren(...parts);
+  };
+
+  // "Message me on X or Instagram instead", with whichever of those links are set.
+  const dmFallback = () => {
+    const links = [
+      SITE.xUrl && el('a', { href: SITE.xUrl, target: '_blank', rel: 'noopener' }, 'X'),
+      SITE.instagramUrl && el('a', { href: SITE.instagramUrl, target: '_blank', rel: 'noopener' }, 'Instagram'),
+    ].filter(Boolean);
+    if (!links.length) return [];
+    return [' Message me on ', ...links.flatMap((a, i) => (i ? [' or ', a] : [a])), ' instead.'];
+  };
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+
+    const data = Object.fromEntries(new FormData(form));
+    data.elapsedMs = Math.round(performance.now() - shownAt);
+
+    button.disabled = true;
+    button.textContent = 'Sending…';
+    setStatus('pending', '');
+
+    try {
+      const res = await fetch(SITE.contactUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const out = await res.json().catch(() => ({}));
+
+      if (res.ok && out.ok) {
+        form.reset();
+        setStatus('ok', 'Sent. Thanks! I’ll get back to you using the contact info you left.');
+      } else if (out.error && res.status !== 503) {
+        setStatus('error', out.error);
+      } else {
+        throw new Error(out.error || `Contact form returned ${res.status}`);
+      }
+    } catch (err) {
+      console.warn('Contact form:', err.message);
+      if (isLocalPreview()) {
+        setStatus('error', 'The form isn’t connected yet. It starts sending once the site is live and email is set up (README, step 6).');
+      } else {
+        setStatus('error', 'Your message couldn’t be sent right now.', ...dmFallback());
+      }
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Send message';
+    }
+  });
+}
+
+// ---------- Whatnot show countdown ----------
+
+function zonedParts(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23',
+    year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric',
+  }).formatToParts(date);
+  const get = (t) => Number(parts.find((p) => p.type === t).value);
+  return { year: get('year'), month: get('month'), day: get('day'), hour: get('hour'), minute: get('minute'), second: get('second') };
+}
+
+function offsetMs(date, timeZone) {
+  const p = zonedParts(date, timeZone);
+  const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  return asUtc - Math.floor(date.getTime() / 1000) * 1000;
+}
+
+// Wall-clock time in a time zone -> real instant (handles daylight saving changes).
+function zonedTime(year, month, day, hour, minute, timeZone) {
+  const guess = Date.UTC(year, month - 1, day, hour, minute);
+  let t = guess - offsetMs(new Date(guess), timeZone);
+  const corrected = guess - offsetMs(new Date(t), timeZone);
+  if (corrected !== t) t = corrected;
+  return new Date(t);
+}
+
+function nextShow(now, show) {
+  const today = zonedParts(now, show.timeZone);
+  for (let add = 0; add <= 7; add++) {
+    const day = new Date(Date.UTC(today.year, today.month - 1, today.day + add));
+    if (day.getUTCDay() !== show.weekday) continue;
+    const start = zonedTime(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), show.hour, show.minute, show.timeZone);
+    const end = new Date(start.getTime() + show.lengthMinutes * 60000);
+    if (now < end) return { start, end, live: now >= start };
+  }
+  return null;
+}
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+function untilText(ms) {
+  const mins = Math.max(1, Math.round(ms / 60000));
+  const d = Math.floor(mins / 1440);
+  const h = Math.floor((mins % 1440) / 60);
+  const m = mins % 60;
+  if (d > 0) return h ? `${plural(d, 'day')}, ${plural(h, 'hour')}` : plural(d, 'day');
+  if (h > 0) return m ? `${plural(h, 'hour')}, ${plural(m, 'minute')}` : plural(h, 'hour');
+  return plural(m, 'minute');
+}
+
+function startShowClock() {
+  const box = $('[data-show]');
+  const next = $('[data-show-next]');
+  const local = $('[data-show-local]');
+  const cta = $('[data-show-cta]');
+  const clock = $('[data-countdown]');
+  const digits = Object.fromEntries($$('[data-cd]').map((n) => [n.dataset.cd, n]));
+  const labels = Object.fromEntries($$('[data-cd-label]').map((n) => [n.dataset.cdLabel, n]));
+  const pad = (n) => String(n).padStart(2, '0');
+  let spoken = '';
+
+  const tick = () => {
+    const now = new Date();
+    const show = nextShow(now, SITE.show);
+    if (!show) return;
+
+    box.dataset.live = String(show.live);
+
+    if (show.live) {
+      next.replaceChildren(el('span', { className: 'live-dot', 'aria-hidden': 'true' }), "We're live now!");
+      clock.hidden = true;
+      local.textContent = '';
+      cta.textContent = 'Join the show';
+      spoken = '';
+      return;
+    }
+
+    cta.textContent = 'Follow on Whatnot';
+    clock.hidden = false;
+
+    // The ticking digits are for the eye; screen readers get one sentence that changes
+    // once a minute instead of every second.
+    const ms = Math.max(0, show.start - now);
+    const secs = Math.floor(ms / 1000);
+    const d = Math.floor(secs / 86400);
+    const h = Math.floor((secs % 86400) / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    digits.d.textContent = d;
+    digits.h.textContent = pad(h);
+    digits.m.textContent = pad(m);
+    digits.s.textContent = pad(s);
+    labels.d.textContent = d === 1 ? 'day' : 'days';
+
+    const sentence = untilText(ms);
+    if (sentence !== spoken) {
+      spoken = sentence;
+      next.replaceChildren('Next show starts in', el('span', { className: 'sr-only' }, ` ${sentence}.`));
+    }
+
+    const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const sameClock = offsetMs(show.start, viewerZone) === offsetMs(show.start, SITE.show.timeZone);
+    const fmt = (timeZone) =>
+      new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(show.start);
+    local.textContent = sameClock
+      ? `${fmt(SITE.show.timeZone)} ET`
+      : `That's ${fmt(viewerZone)} your time.`;
+  };
+
+  // Tick right on each new second so the digits change in step with the real clock.
+  const loop = () => {
+    tick();
+    setTimeout(loop, 1000 - (Date.now() % 1000) + 5);
+  };
+  loop();
+}
+
+// ---------- Add next show to calendar ----------
+// Both options are built from SITE.show above, so they follow any schedule change automatically.
+
+const SHOW_TITLE = 'TerpCards live on Whatnot';
+
+// The show to add: the upcoming one, or next week's if a show is live right now.
+function calendarShow(now = new Date()) {
+  const show = nextShow(now, SITE.show);
+  if (!show) return null;
+  return show.live ? nextShow(new Date(show.end.getTime() + 1000), SITE.show) : show;
+}
+
+function showDetails() {
+  const lines = ['Live sports card show from TerpCards on Whatnot.'];
+  if (SITE.whatnotUrl) lines.push(`Join here: ${SITE.whatnotUrl}`);
+  return lines.join('\n');
+}
+
+// 2026-11-04T22:30:00.000Z -> 20261104T223000Z
+const calTime = (date) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+
+function googleCalendarUrl(show) {
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: SHOW_TITLE,
+    dates: `${calTime(show.start)}/${calTime(show.end)}`,
+    details: showDetails(),
+  });
+  if (SITE.whatnotUrl) params.set('location', SITE.whatnotUrl);
+  return `https://calendar.google.com/calendar/render?${params}`;
+}
+
+// A standard calendar file (.ics) with a 15-minute reminder. Opens in Apple Calendar,
+// Outlook and most other calendar apps.
+function icsFile(show, now = new Date()) {
+  const esc = (s) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+  const fold = (line) => {
+    if (line.length <= 75) return line;
+    let out = line.slice(0, 75);
+    for (let i = 75; i < line.length; i += 74) out += `\r\n ${line.slice(i, i + 74)}`;
+    return out;
+  };
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//TerpCards//Site//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:whatnot-show-${calTime(show.start)}@terpcards`,
+    `DTSTAMP:${calTime(now)}`,
+    `DTSTART:${calTime(show.start)}`,
+    `DTEND:${calTime(show.end)}`,
+    `SUMMARY:${esc(SHOW_TITLE)}`,
+    `DESCRIPTION:${esc(showDetails())}`,
+    SITE.whatnotUrl && `LOCATION:${esc(SITE.whatnotUrl)}`,
+    SITE.whatnotUrl && `URL:${SITE.whatnotUrl}`,
+    'BEGIN:VALARM',
+    'ACTION:DISPLAY',
+    'TRIGGER:-PT15M',
+    `DESCRIPTION:${esc(`${SHOW_TITLE} starts in 15 minutes`)}`,
+    'END:VALARM',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].filter(Boolean).map(fold).join('\r\n') + '\r\n';
+}
+
+function bindCalendar() {
+  const menu = $('details.cal');
+  if (!menu) return;
+  const google = $('[data-cal-google]');
+  const ics = $('[data-cal-ics]');
+  let fileUrl = null;
+
+  const refresh = () => {
+    const show = calendarShow();
+    if (!show) return;
+    google.href = googleCalendarUrl(show);
+    if (fileUrl) URL.revokeObjectURL(fileUrl);
+    fileUrl = URL.createObjectURL(new Blob([icsFile(show)], { type: 'text/calendar;charset=utf-8' }));
+    ics.href = fileUrl;
+    ics.download = 'terpcards-whatnot-show.ics';
+  };
+
+  refresh();
+  menu.addEventListener('toggle', () => { if (menu.open) refresh(); });
+
+  // Close the menu after a choice, on a click elsewhere, or with Escape.
+  for (const link of [google, ics]) link.addEventListener('click', () => setTimeout(() => { menu.open = false; }, 0));
+  document.addEventListener('click', (e) => { if (menu.open && !menu.contains(e.target)) menu.open = false; });
+  menu.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && menu.open) {
+      menu.open = false;
+      menu.querySelector('summary').focus();
+    }
+  });
+}
+
+// ---------- Listings ----------
+
+async function loadListings() {
+  try {
+    const res = await fetch(SITE.apiUrl, { headers: { Accept: 'application/json' } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !Array.isArray(data.items)) throw new Error(data.error || `Feed returned ${res.status}`);
+
+    state.items = data.items;
+    state.sellerUrl = data.sellerUrl || '';
+    state.updatedAt = data.updatedAt ? new Date(data.updatedAt) : new Date();
+  } catch (err) {
+    // No eBay keys yet (or eBay has been down for over a day). Once keys are added in
+    // Cloudflare, the feed starts answering and the live grid shows up on its own.
+    console.warn('Listings feed unavailable:', err.message);
+    if (!useSamples()) {
+      showStoreSection();
+      return;
+    }
+    state.items = sampleListings();
+    state.sample = true;
+    state.updatedAt = new Date();
+    const notice = $('[data-notice]');
+    notice.textContent = 'These are sample listings, shown only on your computer. On your live site, visitors see a "Shop my eBay store" section until your eBay keys are added.';
+    notice.hidden = false;
+  }
+
+  wireLinks();
+  $('[data-controls]').hidden = state.items.length === 0;
+  render();
+}
+
+// Shown instead of the grid when there are no live listings to display.
+function showStoreSection() {
+  $('[data-grid]').replaceChildren();
+  $('[data-grid]').hidden = true;
+  $('[data-controls]').hidden = true;
+  $('[data-status]').textContent = '';
+  $('[data-status]').hidden = true;
+  $('[data-see-all]').hidden = true; // the store section has its own, bigger button
+  $('[data-store]').hidden = false;
+}
+
+function bindControls() {
+  for (const btn of $$('[data-filter]')) {
+    btn.addEventListener('click', () => {
+      state.filter = btn.dataset.filter;
+      for (const b of $$('[data-filter]')) b.setAttribute('aria-pressed', String(b === btn));
+      render();
+    });
+  }
+  let timer;
+  $('[data-search]').addEventListener('input', (e) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { state.query = e.target.value; render(); }, 120);
+  });
+  $('[data-sort]').addEventListener('change', (e) => { state.sort = e.target.value; render(); });
+
+  // Keep auction countdowns honest without refetching.
+  setInterval(() => { if (state.items.some((i) => i.isAuction)) render(); }, 60000);
+}
+
+function shownPrice(item) {
+  return item.isAuction && item.currentBid ? item.currentBid : item.price;
+}
+
+function matchesFilter(item) {
+  if (state.filter === 'bin') return item.isBuyItNow;
+  if (state.filter === 'auction') return item.isAuction;
+  return true;
+}
+
+function matchesQuery(item) {
+  const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const hay = `${item.title} ${item.condition || ''}`.toLowerCase();
+  return words.every((w) => hay.includes(w));
+}
+
+const sorters = {
+  new: (a, b) => (Date.parse(b.listedAt) || 0) - (Date.parse(a.listedAt) || 0),
+  low: (a, b) => (shownPrice(a)?.value ?? Infinity) - (shownPrice(b)?.value ?? Infinity),
+  high: (a, b) => (shownPrice(b)?.value ?? -Infinity) - (shownPrice(a)?.value ?? -Infinity),
+  ending: (a, b) => (Date.parse(a.endsAt) || Infinity) - (Date.parse(b.endsAt) || Infinity),
+};
+
+function render() {
+  const all = state.items;
+  $('[data-count="all"]').textContent = all.length;
+  $('[data-count="bin"]').textContent = all.filter((i) => i.isBuyItNow).length;
+  $('[data-count="auction"]').textContent = all.filter((i) => i.isAuction).length;
+
+  const shown = all.filter(matchesFilter).filter(matchesQuery).sort(sorters[state.sort]);
+  $('[data-grid]').replaceChildren(...shown.map(slab));
+
+  const status = $('[data-status]');
+  if (state.sample) {
+    status.textContent = `${plural(all.length, 'sample listing')}`;
+  } else {
+    status.textContent = `${plural(all.length, 'listing')}, updated ${agoText(state.updatedAt)}`;
+  }
+
+  const empty = $('[data-empty]');
+  if (all.length === 0) {
+    const url = ebayLink();
+    empty.replaceChildren(
+      el('p', {}, 'Nothing is listed on eBay right now. New cards usually show up after the weekly Whatnot show.'),
+      SITE.whatnotUrl ? el('a', { className: 'btn btn-primary', href: SITE.whatnotUrl, target: '_blank', rel: 'noopener' }, 'Follow on Whatnot') : '',
+      !SITE.whatnotUrl && url ? el('a', { className: 'btn btn-primary', href: url, target: '_blank', rel: 'noopener' }, 'Check eBay') : ''
+    );
+    empty.hidden = false;
+  } else if (shown.length === 0) {
+    const clear = el('button', { className: 'btn btn-outline', type: 'button' }, 'Show all listings');
+    clear.addEventListener('click', resetView);
+    const what = state.query.trim() ? `match “${state.query.trim()}”` : 'fit that filter';
+    empty.replaceChildren(el('p', {}, `No listings ${what}.`), clear);
+    empty.hidden = false;
+  } else {
+    empty.hidden = true;
+  }
+}
+
+function resetView() {
+  state.filter = 'all';
+  state.query = '';
+  $('[data-search]').value = '';
+  for (const b of $$('[data-filter]')) b.setAttribute('aria-pressed', String(b.dataset.filter === 'all'));
+  render();
+}
+
+function slab(item) {
+  const price = shownPrice(item);
+  const meta = [];
+
+  if (item.isAuction) {
+    meta.push(item.bidCount ? plural(item.bidCount, 'bid') : 'No bids yet');
+    const left = timeLeft(item.endsAt);
+    if (left) meta.push(left);
+  } else if (item.acceptsOffers) {
+    meta.push('or Best Offer');
+  }
+  if (item.shipping) {
+    meta.push(item.shipping.value === 0 ? 'Free shipping' : `+${money(item.shipping)} ship`);
+  }
+
+  const metaEl = el('span', { className: 'label-meta' });
+  meta.forEach((part, i) => {
+    if (i) metaEl.append(', ');
+    metaEl.append(part); // a string, or a <span> for auctions ending soon
+  });
+
+  const well = el('div', { className: 'well' },
+    item.image
+      ? el('img', { src: item.image, alt: item.title, loading: 'lazy', decoding: 'async' })
+      : el('span', { className: 'well-empty' }, 'Photo on eBay')
+  );
+
+  return el('li', { className: 'slab' },
+    el('a', { className: 'slab-link', href: item.url, target: '_blank', rel: 'noopener' },
+      el('div', { className: 'label' },
+        el('p', { className: 'label-title' }, item.title),
+        el('div', { className: 'label-row' },
+          el('span', { className: `kind ${item.isAuction ? 'kind-auction' : 'kind-bin'}` }, item.isAuction ? 'Auction' : 'Buy It Now'),
+          el('span', { className: 'label-price' }, price ? money(price) : '')
+        ),
+        metaEl
+      ),
+      well
+    )
+  );
+}
+
+function timeLeft(endsAt) {
+  const end = Date.parse(endsAt);
+  if (!end) return '';
+  const ms = end - Date.now();
+  if (ms <= 0) return 'Ended';
+  const mins = Math.floor(ms / 60000);
+  const d = Math.floor(mins / 1440);
+  const h = Math.floor((mins % 1440) / 60);
+  const m = mins % 60;
+  const text = d ? `${d}d ${h}h left` : h ? `${h}h ${m}m left` : `${Math.max(m, 1)}m left`;
+  if (ms < 6 * 3600000) return el('span', { className: 'soon' }, text);
+  return text;
+}
+
+function money(m) {
+  const opts = { style: 'currency', currency: m.currency || 'USD' };
+  if (Number.isInteger(m.value)) opts.maximumFractionDigits = 0;
+  try {
+    return new Intl.NumberFormat('en-US', opts).format(m.value);
+  } catch {
+    return `$${m.value}`;
+  }
+}
+
+function agoText(date) {
+  if (!date) return 'just now';
+  const mins = Math.round((Date.now() - date.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${plural(mins, 'minute')} ago`;
+  return `${plural(Math.round(mins / 60), 'hour')} ago`;
+}
+
+function showSkeletons(n) {
+  const skel = () =>
+    el('li', { className: 'slab slab-skel', 'aria-hidden': 'true' },
+      el('div', { className: 'slab-link' },
+        el('div', { className: 'label' },
+          el('p', { className: 'label-title' }, ' '),
+          el('div', { className: 'label-row' },
+            el('span', { className: 'kind' }, 'Loading'),
+            el('span', { className: 'label-price' }, '$00')
+          ),
+          el('span', { className: 'label-meta' }, ' ')
+        ),
+        el('div', { className: 'well' })
+      )
+    );
+  $('[data-grid]').replaceChildren(...Array.from({ length: n }, skel));
+}
+
+// Tiny DOM helper: el('a', { className, href }, 'text', childNode, ...)
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'className') node.className = v;
+    else if (k in node && typeof v !== 'string') node[k] = v;
+    else node.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (c === '' || c == null) continue;
+    node.append(c);
+  }
+  return node;
+}
+
+// ---------- Sample data (only used while the eBay feed isn't connected) ----------
+
+function sampleArt(name, face, frame) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 350">
+<rect width="250" height="350" rx="12" fill="${frame}"/>
+<rect x="13" y="13" width="224" height="324" rx="6" fill="${face}"/>
+<path d="M13 205 L237 150 L237 337 L13 337Z" fill="${frame}" opacity=".35"/>
+<circle cx="125" cy="128" r="40" fill="#111"/>
+<path d="M48 300 C56 196 194 196 202 300Z" fill="#111"/>
+<rect x="13" y="276" width="224" height="61" fill="#fff"/>
+<rect x="13" y="276" width="224" height="7" fill="${frame}"/>
+<text x="125" y="318" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="22" text-anchor="middle" fill="#111">${name.toUpperCase()}</text>
+</svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function sampleListings() {
+  const now = Date.now();
+  const hrs = (h) => new Date(now + h * 3600000).toISOString();
+  const ago = (h) => new Date(now - h * 3600000).toISOString();
+  const usd = (v) => ({ value: v, currency: 'USD' });
+  const base = { url: '#listings', bidCount: 0, currentBid: null, acceptsOffers: false, condition: null, endsAt: null };
+
+  return [
+    { ...base, id: 's1', title: '2024 Chrome Rookie Refractor #128 Marcus Bell PSA 10', image: sampleArt('Bell', '#1F5FBF', '#0B1F3F'), price: usd(145), isBuyItNow: true, isAuction: false, acceptsOffers: true, shipping: usd(0), listedAt: ago(2) },
+    { ...base, id: 's2', title: '2025 Rookie Patch Auto /99 Jalen Okafor SGC 9', image: sampleArt('Okafor', '#C8102E', '#2B0A0F'), price: usd(99), currentBid: usd(180), bidCount: 14, isBuyItNow: false, isAuction: true, shipping: usd(0), listedAt: ago(30), endsAt: hrs(4.3) },
+    { ...base, id: 's3', title: '2023 Silver Wave Parallel /199 Dante Ruiz RC Raw', image: sampleArt('Ruiz', '#9AA4AE', '#3A4048'), price: usd(20), currentBid: usd(38), bidCount: 7, isBuyItNow: false, isAuction: true, shipping: usd(4.99), listedAt: ago(20), endsAt: hrs(27) },
+    { ...base, id: 's4', title: '2022 Draft Picks Auto Theo Kimura BGS 9.5', image: sampleArt('Kimura', '#0E7C5A', '#06281D'), price: usd(220), isBuyItNow: true, isAuction: false, shipping: usd(0), listedAt: ago(5) },
+    { ...base, id: 's5', title: '1998 Vintage Insert Ray Coleman Raw NM', image: sampleArt('Coleman', '#E2B33C', '#4A3305'), price: usd(32.5), isBuyItNow: true, isAuction: false, shipping: usd(4.99), listedAt: ago(48) },
+    { ...base, id: 's6', title: '2020 Rookie Ticket Auto Andre Pike CGC 9.5', image: sampleArt('Pike', '#5B2A86', '#1C0B2E'), price: usd(310), isBuyItNow: true, isAuction: false, acceptsOffers: true, shipping: usd(0), listedAt: ago(70) },
+    { ...base, id: 's7', title: '2021 Gold Refractor /50 Eli Navarro Raw', image: sampleArt('Navarro', '#D4A017', '#3D2C00'), price: usd(95), isBuyItNow: true, isAuction: false, acceptsOffers: true, shipping: usd(0), listedAt: ago(9) },
+    { ...base, id: 's8', title: '2024 Holiday Variation Sam Whitfield PSA 9', image: sampleArt('Whitfield', '#2E8B57', '#B22222'), price: usd(12), currentBid: usd(12), bidCount: 0, isBuyItNow: false, isAuction: true, shipping: usd(1.5), listedAt: ago(12), endsAt: hrs(54) },
+    { ...base, id: 's9', title: '2024 Hometown Hawks Team Lot, 25 cards, base and inserts', image: sampleArt('Hawks', '#F26B21', '#3A1500'), price: usd(18), isBuyItNow: true, isAuction: false, shipping: usd(0), listedAt: ago(96) },
+    { ...base, id: 's10', title: '2019 Chrome Update Rookie Leo Hartman PSA 8', image: sampleArt('Hartman', '#14213D', '#FCA311'), price: usd(24), isBuyItNow: true, isAuction: false, shipping: usd(4.99), listedAt: ago(130) },
+  ];
+}

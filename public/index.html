@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TerpCards | Sports cards for sale</title>
+  <meta name="description" content="Sports cards for sale, and a live Whatnot show every Wednesday at 5:30 PM ET.">
+  <meta name="theme-color" content="#121417">
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+  <!-- Link previews in texts and social apps. Replace yourdomain.com with your domain. -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="TerpCards">
+  <meta property="og:description" content="Sports cards for sale, and a live Whatnot show every Wednesday at 5:30 PM ET.">
+  <meta property="og:image" content="https://yourdomain.com/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wdth,wght@75..100,400..800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#listings">Skip to listings</a>
+
+  <header class="hero">
+    <div class="wrap">
+      <!-- Each link shows only when its address is set in app.js. The small arrow means "opens another site". -->
+      <nav class="topbar" aria-label="TerpCards elsewhere">
+        <a class="topbar-link" data-link="whatnot" href="#" target="_blank" rel="noopener">Whatnot<svg class="topbar-icon" viewBox="0 0 12 12" aria-hidden="true"><path d="M5 2.5H2.5v7h7V7M7 2.5h2.5V5M9.5 2.5 5.5 6.5"/></svg></a>
+        <a class="topbar-link" data-link="ebay" href="#" target="_blank" rel="noopener">eBay<svg class="topbar-icon" viewBox="0 0 12 12" aria-hidden="true"><path d="M5 2.5H2.5v7h7V7M7 2.5h2.5V5M9.5 2.5 5.5 6.5"/></svg></a>
+        <a class="topbar-link" data-link="x" href="#" target="_blank" rel="noopener" aria-label="X (Twitter)">X<svg class="topbar-icon" viewBox="0 0 12 12" aria-hidden="true"><path d="M5 2.5H2.5v7h7V7M7 2.5h2.5V5M9.5 2.5 5.5 6.5"/></svg></a>
+        <a class="topbar-link" data-link="instagram" href="#" target="_blank" rel="noopener">Instagram<svg class="topbar-icon" viewBox="0 0 12 12" aria-hidden="true"><path d="M5 2.5H2.5v7h7V7M7 2.5h2.5V5M9.5 2.5 5.5 6.5"/></svg></a>
+        <a class="topbar-link" data-link="youtube" href="#" target="_blank" rel="noopener">YouTube<svg class="topbar-icon" viewBox="0 0 12 12" aria-hidden="true"><path d="M5 2.5H2.5v7h7V7M7 2.5h2.5V5M9.5 2.5 5.5 6.5"/></svg></a>
+      </nav>
+
+      <div class="hero-body">
+        <div class="hero-main">
+          <h1 class="logo">
+            <picture>
+              <source type="image/webp" srcset="img/logo-600.webp 600w, img/logo-1200.webp 1200w" sizes="(min-width: 860px) 600px, calc(100vw - 32px)">
+              <img src="img/logo-1200.png" width="1200" height="687" alt="TerpCards" fetchpriority="high">
+            </picture>
+          </h1>
+          <p class="lede">Sports cards for sale, and live on Whatnot every week. Listed cards link straight to their eBay page.</p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="#listings">Browse listings</a>
+            <a class="btn btn-outline" data-link="ebay" href="#" target="_blank" rel="noopener">Open my eBay store</a>
+          </div>
+        </div>
+
+        <aside class="show" aria-labelledby="show-title" data-show>
+          <h2 class="show-title" id="show-title">Live on Whatnot</h2>
+          <p class="show-when">Every Wednesday at 5:30&nbsp;PM&nbsp;ET</p>
+          <p class="show-next" data-show-next></p>
+          <div class="countdown" data-countdown aria-hidden="true" hidden>
+            <span class="cd-unit"><span class="cd-num" data-cd="d">0</span><span class="cd-label" data-cd-label="d">days</span></span>
+            <span class="cd-unit"><span class="cd-num" data-cd="h">00</span><span class="cd-label">hrs</span></span>
+            <span class="cd-unit"><span class="cd-num" data-cd="m">00</span><span class="cd-label">min</span></span>
+            <span class="cd-unit"><span class="cd-num" data-cd="s">00</span><span class="cd-label">sec</span></span>
+          </div>
+          <p class="show-local" data-show-local></p>
+          <div class="show-actions">
+            <a class="btn btn-light" data-link="whatnot" data-show-cta href="#" target="_blank" rel="noopener">Follow on Whatnot</a>
+            <details class="cal">
+              <summary class="btn btn-ghost">Add next show to calendar</summary>
+              <!-- Both links are filled in by app.js from the show schedule in SITE.show. -->
+              <div class="cal-menu">
+                <a data-cal-google href="#" target="_blank" rel="noopener">Google Calendar</a>
+                <a data-cal-ics href="#">Apple Calendar, Outlook or other</a>
+              </div>
+            </details>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </header>
+
+  <main class="shelf" id="listings" tabindex="-1">
+    <div class="wrap">
+      <div class="shelf-head">
+        <div>
+          <h2 class="shelf-title">On eBay now</h2>
+          <p class="status" data-status aria-live="polite">Loading listings…</p>
+        </div>
+        <a class="see-all" data-link="ebay" data-see-all href="#" target="_blank" rel="noopener">See everything on eBay</a>
+      </div>
+
+      <!-- Shown instead of the listings grid until the eBay feed has listings to show
+           (for example, before your eBay API keys are added). app.js decides. -->
+      <div class="store" data-store hidden>
+        <div class="store-text">
+          <h3 class="store-title">Shop my eBay store</h3>
+          <p class="store-body">Browse the cards I have listed on eBay, where purchases come with eBay's Money Back Guarantee. I have more that isn't listed there, so if you're after something specific, just ask.</p>
+          <a class="btn btn-primary btn-lg" data-link="ebay" href="#" target="_blank" rel="noopener">Shop on eBay<svg class="btn-icon" viewBox="0 0 12 12" aria-hidden="true"><path d="M5 2.5H2.5v7h7V7M7 2.5h2.5V5M9.5 2.5 5.5 6.5"/></svg></a>
+        </div>
+        <div class="store-art" aria-hidden="true">
+          <div class="art-slab art-left"><span class="art-label"></span><span class="art-well"></span></div>
+          <div class="art-slab art-right"><span class="art-label"></span><span class="art-well"></span></div>
+          <div class="art-slab art-center">
+            <span class="art-label"></span>
+            <span class="art-well">
+              <picture>
+                <source type="image/webp" srcset="img/mark-160.webp">
+                <img src="img/mark-160.png" width="66" height="80" alt="" loading="lazy">
+              </picture>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <aside class="offer" aria-labelledby="offer-title" data-needs-social>
+        <div class="offer-text">
+          <h3 class="offer-title" id="offer-title">Make me an offer</h3>
+          <p class="offer-body">I can often do better than the eBay price. Message me the card and your offer on X or Instagram.</p>
+        </div>
+        <div class="offer-actions">
+          <a class="btn btn-outline btn-sm" data-link="x" href="#" target="_blank" rel="noopener">Offer on X</a>
+          <a class="btn btn-outline btn-sm" data-link="instagram" href="#" target="_blank" rel="noopener">Offer on Instagram</a>
+          <a class="offer-form-link" href="#contact" data-topic="offer">Or use the contact form</a>
+        </div>
+      </aside>
+
+      <p class="notice" data-notice hidden></p>
+
+      <div class="controls" data-controls hidden>
+        <div class="seg" role="group" aria-label="Listing type">
+          <button type="button" class="seg-btn" data-filter="all" aria-pressed="true">All <span class="seg-count" data-count="all"></span></button>
+          <button type="button" class="seg-btn" data-filter="bin" aria-pressed="false">Buy It Now <span class="seg-count" data-count="bin"></span></button>
+          <button type="button" class="seg-btn" data-filter="auction" aria-pressed="false">Auctions <span class="seg-count" data-count="auction"></span></button>
+        </div>
+        <label class="search">
+          <span class="sr-only">Search listings</span>
+          <input type="search" data-search placeholder="Search player, set or grade" autocomplete="off">
+        </label>
+        <label class="sort">
+          <span class="sort-label">Sort</span>
+          <select data-sort>
+            <option value="new">Newest first</option>
+            <option value="low">Price: low to high</option>
+            <option value="high">Price: high to low</option>
+            <option value="ending">Ending soonest</option>
+          </select>
+        </label>
+      </div>
+
+      <ul class="grid" data-grid aria-label="Listings"></ul>
+      <div class="empty" data-empty hidden></div>
+    </div>
+  </main>
+
+  <section class="contact" id="contact" aria-labelledby="contact-title" tabindex="-1">
+    <div class="wrap">
+      <div class="contact-panel">
+        <div class="contact-intro">
+          <h2 class="contact-title" id="contact-title">Contact me</h2>
+          <p>Questions about a card, an offer, or anything else.</p>
+          <p class="contact-hint"><strong>This form can't send replies,</strong> so leave a way to reach you: an email, a phone number, or your X or Instagram handle.</p>
+          <p class="contact-dm" data-needs-social>Prefer DMs?
+            <a data-link="x" href="#" target="_blank" rel="noopener">X</a>
+            <a data-link="instagram" href="#" target="_blank" rel="noopener">Instagram</a>
+          </p>
+        </div>
+
+        <form class="contact-form" data-contact-form>
+          <label class="field">
+            <span class="field-label">What's this about?</span>
+            <select name="topic" data-topic-select>
+              <option value="offer">Make an offer</option>
+              <option value="card">Question about a card</option>
+              <option value="other">Something else</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Your name <span class="field-optional">(optional)</span></span>
+            <input name="name" type="text" maxlength="100" autocomplete="name">
+          </label>
+
+          <label class="field">
+            <span class="field-label">How can I reach you?</span>
+            <input name="contact" type="text" required maxlength="200" autocomplete="email" aria-describedby="contact-help" placeholder="you@example.com or @handle">
+            <span class="field-hint" id="contact-help">Email, phone number, or your X or Instagram handle. If you leave an email, I can reply straight to it.</span>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Message</span>
+            <textarea name="message" required maxlength="4000" rows="5" placeholder="Which card, and what's your offer or question?"></textarea>
+          </label>
+
+          <!-- Hidden from people; spam bots tend to fill it in. -->
+          <div class="hp" aria-hidden="true">
+            <label>Leave this empty <input name="website" type="text" tabindex="-1" autocomplete="off"></label>
+          </div>
+
+          <div class="form-row">
+            <button class="btn btn-primary" type="submit" data-contact-submit>Send message</button>
+            <p class="form-status" data-form-status role="status" aria-live="polite"></p>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <div class="wrap foot-inner">
+      <div>
+        <div class="foot-brand">
+          <picture>
+            <source type="image/webp" srcset="img/mark-160.webp">
+            <img class="foot-logo" src="img/mark-160.png" width="66" height="80" alt="">
+          </picture>
+          <p class="foot-mark">TerpCards</p>
+        </div>      </div>
+      <nav class="foot-links" aria-label="Footer">
+        <a data-link="whatnot" href="#" target="_blank" rel="noopener">Whatnot</a>
+        <a data-link="ebay" href="#" target="_blank" rel="noopener">eBay store</a>
+        <a data-link="x" href="#" target="_blank" rel="noopener" aria-label="X (Twitter)">X</a>
+        <a data-link="instagram" href="#" target="_blank" rel="noopener">Instagram</a>
+        <a data-link="youtube" href="#" target="_blank" rel="noopener">YouTube</a>
+        <a href="#contact">Contact</a>
+      </nav>
+      <p class="foot-copy">&copy; <span data-year></span> TerpCards</p>
+    </div>
+  </footer>
+
+  <script src="app.js" defer></script>
+</body>
+</html>

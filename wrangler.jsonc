@@ -1,0 +1,40 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "terpcards",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-30",
+
+  // The page files. Requests for these are free and never run the Worker.
+  // Only /api/* goes to the Worker, which counts toward the free 100,000 requests a day.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Settings that aren't secret. Put your eBay username in EBAY_SELLER.
+  // The two eBay keys are secrets: add them in the Cloudflare dashboard or with
+  // `npx wrangler secret put EBAY_CLIENT_ID` and `npx wrangler secret put EBAY_CLIENT_SECRET`.
+  "vars": {
+    "EBAY_SELLER": "terpcards",
+    "EBAY_CATEGORY_IDS": "212",
+    "EBAY_MAX_ITEMS": "200",
+    "EBAY_MARKETPLACE_ID": "EBAY_US",
+
+    // Contact form (README step 6). Messages go to CONTACT_TO. CONTACT_FROM must be an
+    // address on your own domain, e.g. "contact@yourdomain.com"; fill it in at step 6.
+    "CONTACT_TO": "terpcards@gmail.com",
+    "CONTACT_FROM": ""
+  },
+
+  // Lets the contact form send email. After you turn on Email Routing and verify
+  // terpcards@gmail.com (README step 6), delete the // at the start of the next three lines.
+  // "send_email": [
+  //   { "name": "CONTACT_EMAIL", "destination_address": "terpcards@gmail.com" }
+  // ],
+
+  // Keeps recent logs in the dashboard so you can see errors from the eBay feed.
+  "observability": {
+    "enabled": true
+  }
+}
