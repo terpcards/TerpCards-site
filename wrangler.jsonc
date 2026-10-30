@@ -24,7 +24,7 @@
     // Contact form (README step 6). Messages go to CONTACT_TO. CONTACT_FROM must be an
     // address on your own domain, e.g. "contact@yourdomain.com"; fill it in at step 6.
     "CONTACT_TO": "terpcards@gmail.com",
-    "CONTACT_FROM": ""
+    "CONTACT_FROM": "contact@terp.cards"
   },
 
   // Lets the contact form send email. After you turn on Email Routing and verify
