@@ -29,9 +29,9 @@
 
   // Lets the contact form send email. After you turn on Email Routing and verify
   // terpcards@gmail.com (README step 6), delete the // at the start of the next three lines.
-  // "send_email": [
-  //   { "name": "CONTACT_EMAIL", "destination_address": "terpcards@gmail.com" }
-  // ],
+   "send_email": [
+     { "name": "CONTACT_EMAIL", "destination_address": "terpcards@gmail.com" }
+   ],
 
   // Keeps recent logs in the dashboard so you can see errors from the eBay feed.
   "observability": {
