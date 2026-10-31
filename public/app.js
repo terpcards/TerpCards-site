@@ -665,18 +665,11 @@ function tile(item) {
     metaEl.append(part); // a string, or a <span> for auctions ending soon
   });
 
-  // The title is already in the tile's text, so the photo and grade badge don't repeat it
-  // to screen readers.
-  const grade = parseGrade(item.title);
+  // The title is already in the tile's text, so the photo doesn't repeat it to screen readers.
   const photo = el('div', { className: 'tile-photo' },
     item.image
       ? el('img', { src: item.image, alt: '', loading: 'lazy', decoding: 'async' })
-      : el('span', { className: 'tile-photo-empty' }, 'Photo on eBay'),
-    grade
-      ? el('span', { className: `tile-grade${grade.grade === '10' ? ' is-gem' : ''}`, 'aria-hidden': 'true' },
-          el('span', { className: 'tile-grade-by' }, grade.grader),
-          el('span', { className: 'tile-grade-num' }, grade.grade))
-      : ''
+      : el('span', { className: 'tile-photo-empty' }, 'Photo on eBay')
   );
 
   const kind = item.isAuction
@@ -706,22 +699,6 @@ function tile(item) {
       offer
     )
   );
-}
-
-// Grading company and grade from a listing title, e.g. "... PSA 10 Gem Mint" -> PSA 10.
-// Raw cards, and titles that only mention a grader without a grade, get no badge.
-const GRADERS = 'PSA|BGS|BVG|SGC|CGC|CSG|TAG|HGA|Beckett';
-const GRADE_RE = new RegExp(`\\b(${GRADERS})\\b[\\s#:-]*(?:(?:gem|mint|mt|pristine|black\\s*label|bl)\\b[\\s-]*)*(10|[1-9](?:\\.5)?)(?![\\d.])`, 'i');
-const AUTH_RE = new RegExp(`\\b(${GRADERS})\\b[\\s#:-]*(authentic|auth)\\b`, 'i');
-
-function parseGrade(title) {
-  const text = String(title || '');
-  const name = (g) => (g.toLowerCase() === 'beckett' ? 'BGS' : g.toUpperCase());
-  const m = text.match(GRADE_RE);
-  if (m) return { grader: name(m[1]), grade: m[2] };
-  const a = text.match(AUTH_RE);
-  if (a) return { grader: name(a[1]), grade: 'Auth' };
-  return null;
 }
 
 function timeLeft(endsAt) {

@@ -675,27 +675,6 @@ a { color: inherit; }
 .tile-offer:hover { background: rgba(217, 25, 42, 0.18); }
 .offer-short { display: none; }
 
-/* Grade badge on the photo, from the title ("PSA 10"); 10s in logo red */
-.tile-grade {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 4px 7px 3px;
-  border: 1px solid #4A525A;
-  border-radius: 4px;
-  background: rgba(17, 19, 22, 0.88);
-  color: var(--paper);
-  line-height: 1;
-  white-space: nowrap;
-}
-.tile-grade-by { font-size: 11px; font-weight: 700; letter-spacing: 0.02em; color: var(--chrome-mid); }
-.tile-grade-num { font-family: var(--display); font-size: 17px; }
-.tile-grade.is-gem { background: var(--red-fill); border-color: var(--red-fill); }
-.tile-grade.is-gem .tile-grade-by { color: var(--paper); }
-
 .tile-photo {
   position: relative;
   aspect-ratio: 3 / 4;
@@ -786,9 +765,6 @@ a { color: inherit; }
 /* Text sizes follow each tile's own width (container queries), so narrow tiles always fit */
 @container (max-width: 230px) {
   .tile-offer { min-height: 36px; font-size: 12.5px; }
-  .tile-grade { top: 6px; left: 6px; padding: 3px 6px 2px; }
-  .tile-grade-by { font-size: 10px; }
-  .tile-grade-num { font-size: 15px; }
   .tile-info { gap: 6px; padding: 10px 11px 12px; }
   .tile-title { font-size: 12.5px; }
   .tile-price { font-size: 21px; }
@@ -810,9 +786,6 @@ a { color: inherit; }
 }
 @container (max-width: 130px) {
   .tile-offer { min-height: 32px; font-size: 11.5px; }
-  .tile-grade { top: 4px; left: 4px; gap: 3px; padding: 2px 4px 1px; border-radius: 3px; }
-  .tile-grade-by { font-size: 8.5px; }
-  .tile-grade-num { font-size: 12px; }
   .tile-info { gap: 4px; padding: 6px 6px 7px; }
   .tile-title { font-size: 10.5px; line-height: 1.25; min-height: 3.75em; }
   .tile-price { font-size: 16px; }

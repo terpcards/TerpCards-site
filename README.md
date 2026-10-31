@@ -1,6 +1,6 @@
 # TerpCards site
 
-A one-page card shop site. The main section is a live grid of your active eBay listings. Each card links to its eBay listing, shows a grade badge when the title names one (PSA 10, BGS 9.5 and so on), and has a **Make an offer** button that opens the contact form with that card filled in. Below the grid, an **I buy cards** section invites people selling cards to get in touch. There's also a Whatnot block that counts down to your Wednesday 5:30 PM ET show and converts the time for visitors in other time zones.
+A one-page card shop site. The main section is a live grid of your active eBay listings. Each card links to its eBay listing and has a **Make an offer** button that opens the contact form with that card filled in. Below the grid, an **I buy cards** section invites people selling cards to get in touch. There's also a Whatnot block that counts down to your Wednesday 5:30 PM ET show and converts the time for visitors in other time zones.
 
 It runs on **Cloudflare Workers' free plan**. The page files are served free with no limit, and only the listings feed (`/api/listings`) counts toward the free 100,000 requests a day, which caching keeps to a tiny fraction. Your only ongoing cost is the yearly domain renewal.
 
