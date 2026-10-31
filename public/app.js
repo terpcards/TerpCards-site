@@ -15,6 +15,9 @@ const SITE = {
   apiUrl: '/api/listings',
   contactUrl: '/api/contact',
 
+  // How many cards to show per page in the listings grid.
+  perPage: 24,
+
   // When the eBay feed has no listings to give (no API keys yet, or a long eBay outage):
   //   'local' = show sample cards only when you open the site on your own computer,
   //             and a "Shop my eBay store" section everywhere else (recommended)
@@ -42,6 +45,7 @@ const state = {
   filter: 'all',
   query: '',
   sort: 'new',
+  page: 1,
   sellerUrl: '',
   updatedAt: null,
   sample: false,
@@ -430,6 +434,7 @@ function bindControls() {
   for (const btn of $$('[data-filter]')) {
     btn.addEventListener('click', () => {
       state.filter = btn.dataset.filter;
+      state.page = 1;
       for (const b of $$('[data-filter]')) b.setAttribute('aria-pressed', String(b === btn));
       render();
     });
@@ -437,9 +442,16 @@ function bindControls() {
   let timer;
   $('[data-search]').addEventListener('input', (e) => {
     clearTimeout(timer);
-    timer = setTimeout(() => { state.query = e.target.value; render(); }, 120);
+    timer = setTimeout(() => { state.query = e.target.value; state.page = 1; render(); }, 120);
   });
-  $('[data-sort]').addEventListener('change', (e) => { state.sort = e.target.value; render(); });
+  $('[data-sort]').addEventListener('change', (e) => { state.sort = e.target.value; state.page = 1; render(); });
+
+  // Page buttons below the grid.
+  $('[data-pager]').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-page]');
+    if (!btn || btn.disabled) return;
+    goToPage(Number(btn.dataset.page));
+  });
 
   // Keep auction countdowns honest without refetching.
   setInterval(() => { if (state.items.some((i) => i.isAuction)) render(); }, 60000);
@@ -476,7 +488,13 @@ function render() {
   $('[data-count="auction"]').textContent = all.filter((i) => i.isAuction).length;
 
   const shown = all.filter(matchesFilter).filter(matchesQuery).sort(sorters[state.sort]);
-  $('[data-grid]').replaceChildren(...shown.map(slab));
+  const perPage = Math.max(1, SITE.perPage || 24);
+  const pages = Math.max(1, Math.ceil(shown.length / perPage));
+  state.page = Math.min(Math.max(1, state.page), pages);
+  const start = (state.page - 1) * perPage;
+  const pageItems = shown.slice(start, start + perPage);
+  $('[data-grid]').replaceChildren(...pageItems.map(slab));
+  renderPager(shown.length, pages, start, pageItems.length);
 
   const status = $('[data-status]');
   if (state.sample) {
@@ -505,9 +523,69 @@ function render() {
   }
 }
 
+// Page numbers to show: always the first and last, plus the current page and its neighbours,
+// with gaps marked by "…". For example, page 6 of 12: 1 … 5 6 7 … 12
+function pageList(current, pages) {
+  const want = new Set([1, pages, current - 1, current, current + 1]);
+  if (current <= 3) [2, 3, 4].forEach((n) => want.add(n));
+  if (current >= pages - 2) [pages - 1, pages - 2, pages - 3].forEach((n) => want.add(n));
+  const nums = [...want].filter((n) => n >= 1 && n <= pages).sort((a, b) => a - b);
+  const out = [];
+  nums.forEach((n, i) => {
+    if (i && n - nums[i - 1] > 1) out.push(n - nums[i - 1] === 2 ? n - 1 : '…');
+    out.push(n);
+  });
+  return out;
+}
+
+function renderPager(total, pages, start, count) {
+  const pager = $('[data-pager]');
+  if (pages <= 1) {
+    pager.hidden = true;
+    pager.replaceChildren();
+    return;
+  }
+  pager.hidden = false;
+
+  const button = (content, page, { disabled = false, current = false, aria } = {}) => {
+    const b = el('button', { type: 'button', className: `page-btn${current ? ' is-current' : ''}` }, ...[content].flat());
+    b.dataset.page = page;
+    if (aria) b.setAttribute('aria-label', aria);
+    if (current) b.setAttribute('aria-current', 'page');
+    b.disabled = disabled;
+    return b;
+  };
+
+  const list = el('div', { className: 'pager-pages' });
+  // Words on wider screens, arrows on phones (CSS picks which one shows).
+  const label = (long, short) => [el('span', { className: 'pg-long' }, long), el('span', { className: 'pg-short' }, short)];
+  list.append(button(label('Previous', '‹'), state.page - 1, { disabled: state.page === 1, aria: 'Previous page' }));
+  for (const n of pageList(state.page, pages)) {
+    if (n === '…') list.append(el('span', { className: 'page-gap', 'aria-hidden': 'true' }, '…'));
+    else list.append(button(String(n), n, { current: n === state.page, aria: `Page ${n}` }));
+  }
+  list.append(button(label('Next', '›'), state.page + 1, { disabled: state.page === pages, aria: 'Next page' }));
+
+  pager.replaceChildren(
+    el('p', { className: 'pager-count' }, `Showing ${start + 1}–${start + count} of ${total}`),
+    list
+  );
+}
+
+function goToPage(n) {
+  state.page = n;
+  render();
+  // Bring the top of the grid back into view, and move keyboard focus there too.
+  const top = $('[data-controls]').hidden ? $('#listings') : $('[data-controls]');
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  top.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  $('[data-grid]').focus({ preventScroll: true });
+}
+
 function resetView() {
   state.filter = 'all';
   state.query = '';
+  state.page = 1;
   $('[data-search]').value = '';
   for (const b of $$('[data-filter]')) b.setAttribute('aria-pressed', String(b.dataset.filter === 'all'));
   render();
