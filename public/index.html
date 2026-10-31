@@ -153,12 +153,25 @@
     </div>
   </main>
 
+  <section class="buy" id="sell" aria-labelledby="buy-title">
+    <div class="wrap">
+      <div class="buy-panel">
+        <div class="buy-text">
+          <h2 class="buy-title" id="buy-title">I buy cards</h2>
+          <p class="buy-body">Selling a collection or a few singles? Tell me what you have and I'll get back to you.</p>
+          <p class="buy-hint">Include players, sets, grades or condition, and your asking price if you have one.<span data-needs-social> Photos help, and you can send them by DM on X or Instagram.</span></p>
+        </div>
+        <a class="btn btn-primary btn-lg" href="#contact" data-topic="sell">Tell me what you have</a>
+      </div>
+    </div>
+  </section>
+
   <section class="contact" id="contact" aria-labelledby="contact-title" tabindex="-1">
     <div class="wrap">
       <div class="contact-panel">
         <div class="contact-intro">
           <h2 class="contact-title" id="contact-title">Contact me</h2>
-          <p>Questions about a card, an offer, or anything else.</p>
+          <p>Offers, questions about a card, cards you're selling, or anything else.</p>
           <p class="contact-hint"><strong>This form can't send replies,</strong> so leave a way to reach you: an email, a phone number, or your X or Instagram handle.</p>
           <p class="contact-dm" data-needs-social>Prefer DMs?
             <a data-link="x" href="#" target="_blank" rel="noopener">X</a>
@@ -172,9 +185,18 @@
             <select name="topic" data-topic-select>
               <option value="offer">Make an offer</option>
               <option value="card">Question about a card</option>
+              <option value="sell">Selling cards to me</option>
               <option value="other">Something else</option>
             </select>
           </label>
+
+          <!-- Filled in when someone clicks "Make an offer" on a card. -->
+          <div class="offer-card" data-offer-card hidden>
+            <p class="offer-card-text"><span class="offer-card-label">Card</span> <span data-offer-card-title></span></p>
+            <button type="button" class="offer-card-clear" data-offer-card-clear aria-label="Remove this card from the message">Remove</button>
+            <input type="hidden" name="cardTitle">
+            <input type="hidden" name="cardUrl">
+          </div>
 
           <label class="field">
             <span class="field-label">Your name <span class="field-optional">(optional)</span></span>
@@ -189,7 +211,7 @@
 
           <label class="field">
             <span class="field-label">Message</span>
-            <textarea name="message" required maxlength="4000" rows="5" placeholder="Which card, and what's your offer or question?"></textarea>
+            <textarea name="message" required maxlength="4000" rows="5" placeholder="Your offer, and anything else I should know"></textarea>
           </label>
 
           <!-- Hidden from people; spam bots tend to fill it in. -->
@@ -222,6 +244,7 @@
         <a data-link="x" href="#" target="_blank" rel="noopener" aria-label="X (Twitter)">X</a>
         <a data-link="instagram" href="#" target="_blank" rel="noopener">Instagram</a>
         <a data-link="youtube" href="#" target="_blank" rel="noopener">YouTube</a>
+        <a href="#sell">I buy cards</a>
         <a href="#contact">Contact</a>
       </nav>
       <p class="foot-copy">&copy; <span data-year></span> TerpCards</p>

@@ -1,6 +1,6 @@
 # TerpCards site
 
-A one-page card shop site. The main section is a live grid of your active eBay listings, each drawn as a graded slab that links straight to the eBay listing. There's also a Whatnot block that counts down to your Wednesday 5:30 PM ET show and converts the time for visitors in other time zones.
+A one-page card shop site. The main section is a live grid of your active eBay listings. Each card links to its eBay listing, shows a grade badge when the title names one (PSA 10, BGS 9.5 and so on), and has a **Make an offer** button that opens the contact form with that card filled in. Below the grid, an **I buy cards** section invites people selling cards to get in touch. There's also a Whatnot block that counts down to your Wednesday 5:30 PM ET show and converts the time for visitors in other time zones.
 
 It runs on **Cloudflare Workers' free plan**. The page files are served free with no limit, and only the listings feed (`/api/listings`) counts toward the free 100,000 requests a day, which caching keeps to a tiny fraction. Your only ongoing cost is the yearly domain renewal.
 
@@ -77,9 +77,9 @@ Make a free account at **cloudflare.com** first.
 **Recommended: connect GitHub, so every push redeploys the site.**
 
 1. Push this folder to a GitHub repo (private is fine). `.dev.vars` is git-ignored, so your keys stay off GitHub.
-2. In the Cloudflare dashboard, go to **Workers & Pages → Create application → GitHub**, sign in to GitHub if asked, and pick your repo. Name the Worker **terpcards**. It has to match `"name"` in `wrangler.jsonc`, or the build fails. Then **Save and Deploy**.
+2. In the Cloudflare dashboard, go to **Workers & Pages → Create application → GitHub**, sign in to GitHub if asked, and pick your repo. Name the Worker **terpcards-site**. It has to match `"name"` in `wrangler.jsonc`, or the build fails. Then **Save and Deploy**.
 3. Open the new Worker, go to **Settings → Variables and Secrets**, and add `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` with the type **Secret**.
-4. Visit `https://terpcards.<your-subdomain>.workers.dev/api/listings`. You should see JSON with your items, and the home page switches from the store section to the real grid. (No keys yet? Skip adding them and this check for now; the site works without them.)
+4. Visit `https://terpcards-site.<your-subdomain>.workers.dev/api/listings`. You should see JSON with your items, and the home page switches from the store section to the real grid. (No keys yet? Skip adding them and this check for now; the site works without them.)
 
 **Or deploy from your terminal:**
 
@@ -123,7 +123,7 @@ The form emails each message to terpcards@gmail.com using Cloudflare Email Routi
    - delete the `//` at the start of the three `"send_email"` lines.
 4. Push (or `npm run deploy`), then send yourself a test message from the site. The first one may land in Gmail's spam folder; mark it "Not spam" and the rest will arrive normally.
 
-What the emails look like: the subject says what it's about and who sent it, for example *Make an offer: Jane (TerpCards site)*. If the person left an email address, you can hit **Reply** in Gmail and it goes straight to them. Otherwise the email shows the phone number or handle they left.
+What the emails look like: the subject says what it's about and who sent it, for example *Make an offer: Jane on 2023 Bowman Chrome 1st Auto Prospect /250 BGS 9.5 (TerpCards site)*. Offers and card questions sent from a card's button include the card title and a link to its eBay listing. If the person left an email address, you can hit **Reply** in Gmail and it goes straight to them. Otherwise the email shows the phone number or handle they left.
 
 Bonus: with Email Routing on, you can also create addresses like `hello@yourdomain.com` that forward to your Gmail.
 
@@ -147,6 +147,10 @@ Logo files:
 
 If the logo ever changes, replace these with files of the same names and sizes.
 
+## Listings per page
+
+The grid shows 24 cards per page with page numbers underneath. To change that, edit `perPage: 24` in the settings block at the top of `public/app.js`.
+
 ## The Whatnot box
 
 The countdown, the "Join the show" switch while you're live, and the **Add next show to calendar** button all come from one setting in `public/app.js`:
@@ -161,8 +165,10 @@ show: { weekday: 3, hour: 17, minute: 30, timeZone: 'America/New_York', lengthMi
 
 - `lib/ebay.js` gets an OAuth app token (cached for about two hours), then calls `item_summary/search` filtered to your seller name, for both Buy It Now and auction listings. Auctions with bids are left out by eBay unless you ask for them, so the filter asks.
 - It pages through up to `EBAY_MAX_ITEMS` (default 200), drops duplicates, upgrades photo URLs to a sharper size, and returns newest first.
-- The Worker keeps the result for 15 minutes, in memory and in Cloudflare's edge cache, so visitors almost never wait on eBay. New listings show up within about 15 minutes.
-- If eBay has an outage, the Worker keeps serving the last good list for up to a day.
+- The Worker asks eBay at most once every 15 minutes (`FRESH_SECONDS` in `src/worker.js`). Each saved copy carries the time it was fetched, and that time decides whether it's still fresh. Copies are shared between Cloudflare's servers in the same location, so one fetch serves everyone nearby.
+- Browsers don't cache the feed; they always ask the Worker, which answers from its saved copy.
+- If eBay has an outage, the Worker serves the newest copy it has, up to a day old.
+- Two response headers tell you what happened: `X-Listings-Source` (`memory`, `shared`, `ebay` or `backup`) and `X-Listings-Age` (seconds since that copy was fetched). Check them with `curl -sI https://terp.cards/api/listings`.
 - Errors return a generic message to the browser. The details show up in the Worker's **Logs** tab in the dashboard.
 
 ## Hosting somewhere else

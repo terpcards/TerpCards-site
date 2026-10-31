@@ -635,7 +635,8 @@ a { color: inherit; }
 
 .tile { min-width: 0; container-type: inline-size; }
 
-.tile-link {
+/* The tile frame holds two controls: the link to eBay (photo + details) and the offer button. */
+.tile-card {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -643,10 +644,57 @@ a { color: inherit; }
   border: 1px solid #333A41;
   border-radius: 10px;
   overflow: hidden;
+}
+.tile-card:hover { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
+.tile-link {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   color: var(--text-on-dark);
   text-decoration: none;
 }
-.tile-link:hover { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
+.tile-link:focus-visible,
+.tile-offer:focus-visible { outline: 3px solid var(--chrome-hi); outline-offset: -3px; }
+
+/* "Make an offer" strip at the bottom of each tile */
+.tile-offer {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  margin: 0;
+  padding: 0 10px;
+  border: 0;
+  border-top: 1px solid #333A41;
+  background: transparent;
+  color: var(--text-on-dark);
+  font: 600 13.5px/1 var(--text);
+  cursor: pointer;
+}
+.tile-offer:hover { background: rgba(217, 25, 42, 0.18); }
+.offer-short { display: none; }
+
+/* Grade badge on the photo, from the title ("PSA 10"); 10s in logo red */
+.tile-grade {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 7px 3px;
+  border: 1px solid #4A525A;
+  border-radius: 4px;
+  background: rgba(17, 19, 22, 0.88);
+  color: var(--paper);
+  line-height: 1;
+  white-space: nowrap;
+}
+.tile-grade-by { font-size: 11px; font-weight: 700; letter-spacing: 0.02em; color: var(--chrome-mid); }
+.tile-grade-num { font-family: var(--display); font-size: 17px; }
+.tile-grade.is-gem { background: var(--red-fill); border-color: var(--red-fill); }
+.tile-grade.is-gem .tile-grade-by { color: var(--paper); }
 
 .tile-photo {
   position: relative;
@@ -731,12 +779,16 @@ a { color: inherit; }
 .tile-meta .soon { color: #FF7A84; font-weight: 700; }
 
 @media (max-width: 559px) {
-  .tile-link { border-radius: 8px; }
+  .tile-card { border-radius: 8px; }
   .tile-photo img { inset: 5%; width: 90%; height: 90%; }
 }
 
 /* Text sizes follow each tile's own width (container queries), so narrow tiles always fit */
 @container (max-width: 230px) {
+  .tile-offer { min-height: 36px; font-size: 12.5px; }
+  .tile-grade { top: 6px; left: 6px; padding: 3px 6px 2px; }
+  .tile-grade-by { font-size: 10px; }
+  .tile-grade-num { font-size: 15px; }
   .tile-info { gap: 6px; padding: 10px 11px 12px; }
   .tile-title { font-size: 12.5px; }
   .tile-price { font-size: 21px; }
@@ -749,12 +801,18 @@ a { color: inherit; }
   .tile-price { font-size: 18px; }
 }
 @container (max-width: 150px) {
+  .offer-long { display: none; }
+  .offer-short { display: inline; }
   /* "Buy It Now" becomes "BIN"; screen readers still hear the full words */
   .kind-long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .kind-short { display: inline; }
   .tile-row { flex-wrap: wrap; row-gap: 2px; gap: 4px; }
 }
 @container (max-width: 130px) {
+  .tile-offer { min-height: 32px; font-size: 11.5px; }
+  .tile-grade { top: 4px; left: 4px; gap: 3px; padding: 2px 4px 1px; border-radius: 3px; }
+  .tile-grade-by { font-size: 8.5px; }
+  .tile-grade-num { font-size: 12px; }
   .tile-info { gap: 4px; padding: 6px 6px 7px; }
   .tile-title { font-size: 10.5px; line-height: 1.25; min-height: 3.75em; }
   .tile-price { font-size: 16px; }
@@ -772,13 +830,47 @@ a { color: inherit; }
   color: transparent;
   border-radius: 3px;
 }
-.tile-skel .tile-link:hover { border-color: #333A41; box-shadow: none; }
+.tile-skel .tile-card:hover { border-color: #333A41; box-shadow: none; }
+.tile-skel .tile-offer { cursor: default; }
 
 .empty {
   padding: 40px 0 8px;
   max-width: 52ch;
 }
 .empty p { margin: 0 0 16px; font-size: 18px; }
+
+/* ---------- I buy cards ---------- */
+
+.buy { padding: 0 0 40px; }
+.buy-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px 40px;
+  padding: 28px 20px;
+  background: #20242A;
+  border: 1px solid #2F353C;
+  border-radius: 10px;
+}
+@media (min-width: 860px) {
+  .buy-panel { padding: 32px 40px; }
+}
+.buy-text { flex: 1 1 420px; }
+.buy-title {
+  margin: 0 0 10px;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(34px, 4.4vw, 48px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+.buy-body { margin: 0 0 8px; max-width: 52ch; font-size: 18px; }
+.buy-hint { margin: 0; max-width: 60ch; color: var(--muted-on-dark); font-size: 15px; }
+.buy-hint [hidden] { display: none; }
+@media (max-width: 559px) {
+  .buy-panel .btn { width: 100%; }
+}
 
 /* ---------- Contact ---------- */
 
@@ -829,6 +921,42 @@ a { color: inherit; }
 }
 
 .contact-form { display: grid; gap: 18px; }
+/* The card an offer is about, shown in the form after "Make an offer" */
+.offer-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.offer-card[hidden] { display: none; }
+.offer-card-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.offer-card-label { font-weight: 700; color: var(--muted-on-dark); margin-right: 4px; }
+.offer-card-clear {
+  flex: none;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-on-dark);
+  font: 600 14px/1 var(--text);
+  cursor: pointer;
+}
+.offer-card-clear:hover { border-color: var(--chrome-lo); background: rgba(255, 255, 255, 0.06); }
+
 .field { display: grid; gap: 6px; }
 .field-label { font-weight: 600; font-size: 15px; }
 .field-optional { font-weight: 400; color: var(--muted-on-dark); }

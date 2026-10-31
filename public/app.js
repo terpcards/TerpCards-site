@@ -97,19 +97,71 @@ function wireLinks() {
 
 // ---------- Contact form ----------
 
+// Message box hint for each topic.
+const TOPIC_HINTS = {
+  offer: 'Your offer, and anything else I should know',
+  card: 'Which card, and what would you like to know?',
+  sell: 'What do you have? Players, sets, grades or condition, and your asking price if you have one.',
+  other: 'Your message',
+};
+const OFFER_START = 'My offer: $';
+
+// Set by bindContactForm; lets each tile's "Make an offer" button fill in the form.
+let contactForm = null;
+
+function startOffer(item) {
+  if (!contactForm) return;
+  contactForm.setTopic('offer', { title: item.title, url: item.url });
+  const message = contactForm.form.elements.message;
+  if (!message.value.trim() || message.value.startsWith(OFFER_START)) message.value = OFFER_START;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  $('#contact').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  // Put the cursor right after the "$" so they can type their number.
+  setTimeout(() => {
+    message.focus({ preventScroll: true });
+    message.setSelectionRange(message.value.length, message.value.length);
+  }, reduce ? 0 : 450);
+}
+
 function bindContactForm() {
   const form = $('[data-contact-form]');
   if (!form) return;
   const status = $('[data-form-status]');
   const button = $('[data-contact-submit]');
   const topic = $('[data-topic-select]');
+  const chip = $('[data-offer-card]');
   const shownAt = performance.now();
 
-  // Links like "Or use the contact form" preselect the topic.
+  // The card an offer or question is about, shown above the message box.
+  const setCard = (card) => {
+    form.elements.cardTitle.value = card ? card.title : '';
+    form.elements.cardUrl.value = card ? card.url || '' : '';
+    $('[data-offer-card-title]').textContent = card ? card.title : '';
+    chip.hidden = !card;
+  };
+  const setTopic = (value, card = null) => {
+    topic.value = value;
+    form.elements.message.placeholder = TOPIC_HINTS[value] || TOPIC_HINTS.other;
+    setCard(value === 'offer' || value === 'card' ? card : null);
+  };
+  contactForm = { form, setTopic };
+
+  topic.addEventListener('change', () => {
+    const keep = form.elements.cardTitle.value ? { title: form.elements.cardTitle.value, url: form.elements.cardUrl.value } : null;
+    setTopic(topic.value, keep);
+  });
+  $('[data-offer-card-clear]').addEventListener('click', () => {
+    setCard(null);
+    if (form.elements.message.value === OFFER_START) form.elements.message.value = '';
+    form.elements.message.focus();
+  });
+  setTopic(topic.value);
+
+  // Links like "Or use the contact form" and "Tell me what you have" preselect the topic.
   for (const link of $$('a[data-topic]')) {
     link.addEventListener('click', () => {
-      topic.value = link.dataset.topic;
-      setTimeout(() => form.querySelector('[name="contact"]').focus({ preventScroll: true }), 400);
+      setTopic(link.dataset.topic);
+      setTimeout(() => form.elements.contact.focus({ preventScroll: true }), 400);
     });
   }
 
@@ -149,6 +201,7 @@ function bindContactForm() {
 
       if (res.ok && out.ok) {
         form.reset();
+        setTopic(topic.value);
         setStatus('ok', 'Sent. Thanks! I’ll get back to you using the contact info you left.');
       } else if (out.error && res.status !== 503) {
         setStatus('error', out.error);
@@ -612,11 +665,18 @@ function tile(item) {
     metaEl.append(part); // a string, or a <span> for auctions ending soon
   });
 
-  // The title is already in the tile's text, so the photo doesn't repeat it to screen readers.
+  // The title is already in the tile's text, so the photo and grade badge don't repeat it
+  // to screen readers.
+  const grade = parseGrade(item.title);
   const photo = el('div', { className: 'tile-photo' },
     item.image
       ? el('img', { src: item.image, alt: '', loading: 'lazy', decoding: 'async' })
-      : el('span', { className: 'tile-photo-empty' }, 'Photo on eBay')
+      : el('span', { className: 'tile-photo-empty' }, 'Photo on eBay'),
+    grade
+      ? el('span', { className: `tile-grade${grade.grade === '10' ? ' is-gem' : ''}`, 'aria-hidden': 'true' },
+          el('span', { className: 'tile-grade-by' }, grade.grader),
+          el('span', { className: 'tile-grade-num' }, grade.grade))
+      : ''
   );
 
   const kind = item.isAuction
@@ -625,19 +685,43 @@ function tile(item) {
         el('span', { className: 'kind-long' }, 'Buy It Now'),
         el('span', { className: 'kind-short', 'aria-hidden': 'true' }, 'BIN'));
 
+  const offer = el('button', { type: 'button', className: 'tile-offer', 'aria-label': `Make an offer on ${item.title}` },
+    el('span', { className: 'offer-long' }, 'Make an offer'),
+    el('span', { className: 'offer-short' }, 'Offer'));
+  offer.addEventListener('click', () => startOffer(item));
+
   return el('li', { className: 'tile' },
-    el('a', { className: 'tile-link', href: item.url, target: '_blank', rel: 'noopener' },
-      photo,
-      el('div', { className: 'tile-info' },
-        el('div', { className: 'tile-row' },
-          el('span', { className: 'tile-price' }, price ? money(price) : ''),
-          kind
-        ),
-        el('p', { className: 'tile-title' }, item.title),
-        metaEl
-      )
+    el('div', { className: 'tile-card' },
+      el('a', { className: 'tile-link', href: item.url, target: '_blank', rel: 'noopener' },
+        photo,
+        el('div', { className: 'tile-info' },
+          el('div', { className: 'tile-row' },
+            el('span', { className: 'tile-price' }, price ? money(price) : ''),
+            kind
+          ),
+          el('p', { className: 'tile-title' }, item.title),
+          metaEl
+        )
+      ),
+      offer
     )
   );
+}
+
+// Grading company and grade from a listing title, e.g. "... PSA 10 Gem Mint" -> PSA 10.
+// Raw cards, and titles that only mention a grader without a grade, get no badge.
+const GRADERS = 'PSA|BGS|BVG|SGC|CGC|CSG|TAG|HGA|Beckett';
+const GRADE_RE = new RegExp(`\\b(${GRADERS})\\b[\\s#:-]*(?:(?:gem|mint|mt|pristine|black\\s*label|bl)\\b[\\s-]*)*(10|[1-9](?:\\.5)?)(?![\\d.])`, 'i');
+const AUTH_RE = new RegExp(`\\b(${GRADERS})\\b[\\s#:-]*(authentic|auth)\\b`, 'i');
+
+function parseGrade(title) {
+  const text = String(title || '');
+  const name = (g) => (g.toLowerCase() === 'beckett' ? 'BGS' : g.toUpperCase());
+  const m = text.match(GRADE_RE);
+  if (m) return { grader: name(m[1]), grade: m[2] };
+  const a = text.match(AUTH_RE);
+  if (a) return { grader: name(a[1]), grade: 'Auth' };
+  return null;
 }
 
 function timeLeft(endsAt) {
@@ -675,16 +759,19 @@ function agoText(date) {
 function showSkeletons(n) {
   const skel = () =>
     el('li', { className: 'tile tile-skel', 'aria-hidden': 'true' },
-      el('div', { className: 'tile-link' },
-        el('div', { className: 'tile-photo' }),
-        el('div', { className: 'tile-info' },
-          el('div', { className: 'tile-row' },
-            el('span', { className: 'tile-price' }, '$00'),
-            el('span', { className: 'kind' }, 'Loading')
-          ),
-          el('p', { className: 'tile-title' }, '\u00a0'),
-          el('span', { className: 'tile-meta' }, '\u00a0')
-        )
+      el('div', { className: 'tile-card' },
+        el('div', { className: 'tile-link' },
+          el('div', { className: 'tile-photo' }),
+          el('div', { className: 'tile-info' },
+            el('div', { className: 'tile-row' },
+              el('span', { className: 'tile-price' }, '$00'),
+              el('span', { className: 'kind' }, 'Loading')
+            ),
+            el('p', { className: 'tile-title' }, '\u00a0'),
+            el('span', { className: 'tile-meta' }, '\u00a0')
+          )
+        ),
+        el('div', { className: 'tile-offer' }, '\u00a0')
       )
     );
   $('[data-grid]').replaceChildren(...Array.from({ length: n }, skel));
