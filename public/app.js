@@ -493,7 +493,7 @@ function render() {
   state.page = Math.min(Math.max(1, state.page), pages);
   const start = (state.page - 1) * perPage;
   const pageItems = shown.slice(start, start + perPage);
-  $('[data-grid]').replaceChildren(...pageItems.map(slab));
+  $('[data-grid]').replaceChildren(...pageItems.map(tile));
   renderPager(shown.length, pages, start, pageItems.length);
 
   const status = $('[data-status]');
@@ -591,7 +591,7 @@ function resetView() {
   render();
 }
 
-function slab(item) {
+function tile(item) {
   const price = shownPrice(item);
   const meta = [];
 
@@ -606,33 +606,36 @@ function slab(item) {
     meta.push(item.shipping.value === 0 ? 'Free shipping' : `+${money(item.shipping)} ship`);
   }
 
-  const metaEl = el('span', { className: 'label-meta' });
+  const metaEl = el('span', { className: 'tile-meta' });
   meta.forEach((part, i) => {
     if (i) metaEl.append(', ');
     metaEl.append(part); // a string, or a <span> for auctions ending soon
   });
 
-  const well = el('div', { className: 'well' },
+  // The title is already in the tile's text, so the photo doesn't repeat it to screen readers.
+  const photo = el('div', { className: 'tile-photo' },
     item.image
-      ? el('img', { src: item.image, alt: item.title, loading: 'lazy', decoding: 'async' })
-      : el('span', { className: 'well-empty' }, 'Photo on eBay')
+      ? el('img', { src: item.image, alt: '', loading: 'lazy', decoding: 'async' })
+      : el('span', { className: 'tile-photo-empty' }, 'Photo on eBay')
   );
 
-  return el('li', { className: 'slab' },
-    el('a', { className: 'slab-link', href: item.url, target: '_blank', rel: 'noopener' },
-      el('div', { className: 'label' },
-        el('p', { className: 'label-title' }, item.title),
-        el('div', { className: 'label-row' },
-          item.isAuction
-            ? el('span', { className: 'kind kind-auction' }, 'Auction')
-            : el('span', { className: 'kind kind-bin', title: 'Buy It Now' },
-                el('span', { className: 'kind-long' }, 'Buy It Now'),
-                el('span', { className: 'kind-short', 'aria-hidden': 'true' }, 'BIN')),
-          el('span', { className: 'label-price' }, price ? money(price) : '')
+  const kind = item.isAuction
+    ? el('span', { className: 'kind kind-auction' }, 'Auction')
+    : el('span', { className: 'kind kind-bin', title: 'Buy It Now' },
+        el('span', { className: 'kind-long' }, 'Buy It Now'),
+        el('span', { className: 'kind-short', 'aria-hidden': 'true' }, 'BIN'));
+
+  return el('li', { className: 'tile' },
+    el('a', { className: 'tile-link', href: item.url, target: '_blank', rel: 'noopener' },
+      photo,
+      el('div', { className: 'tile-info' },
+        el('div', { className: 'tile-row' },
+          el('span', { className: 'tile-price' }, price ? money(price) : ''),
+          kind
         ),
+        el('p', { className: 'tile-title' }, item.title),
         metaEl
-      ),
-      well
+      )
     )
   );
 }
@@ -671,17 +674,17 @@ function agoText(date) {
 
 function showSkeletons(n) {
   const skel = () =>
-    el('li', { className: 'slab slab-skel', 'aria-hidden': 'true' },
-      el('div', { className: 'slab-link' },
-        el('div', { className: 'label' },
-          el('p', { className: 'label-title' }, ' '),
-          el('div', { className: 'label-row' },
-            el('span', { className: 'kind' }, 'Loading'),
-            el('span', { className: 'label-price' }, '$00')
+    el('li', { className: 'tile tile-skel', 'aria-hidden': 'true' },
+      el('div', { className: 'tile-link' },
+        el('div', { className: 'tile-photo' }),
+        el('div', { className: 'tile-info' },
+          el('div', { className: 'tile-row' },
+            el('span', { className: 'tile-price' }, '$00'),
+            el('span', { className: 'kind' }, 'Loading')
           ),
-          el('span', { className: 'label-meta' }, ' ')
-        ),
-        el('div', { className: 'well' })
+          el('p', { className: 'tile-title' }, '\u00a0'),
+          el('span', { className: 'tile-meta' }, '\u00a0')
+        )
       )
     );
   $('[data-grid]').replaceChildren(...Array.from({ length: n }, skel));

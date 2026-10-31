@@ -1,5 +1,4 @@
-/* TerpCards: charcoal and chrome with the logo's red. Listings are drawn as graded slabs
-   sitting on a dark display case. */
+/* TerpCards: charcoal and chrome with the logo's red. Listings are dark tiles, photo first. */
 
 :root {
   /* Dark surfaces */
@@ -20,7 +19,6 @@
   /* Logo red, plus a slightly deeper red for filled areas that carry white text */
   --red: #EC1E2D;
   --red-fill: #D9192A;
-  --red-text: #C40000;      /* small red text on white slab labels */
 
   /* Slabs (light plastic on the dark case) */
   --ink: #000000;
@@ -633,166 +631,148 @@ a { color: inherit; }
   .page-gap { min-width: 14px; }
 }
 
-.slab { min-width: 0; }
+/* ---------- Listing tiles: dark tile, photo on top, details below ---------- */
 
-.slab-link {
+.tile { min-width: 0; container-type: inline-size; }
+
+.tile-link {
   display: flex;
   flex-direction: column;
-  gap: 9px;
   height: 100%;
-  padding: 9px;
-  background: linear-gradient(165deg, var(--plastic-hi), var(--plastic-lo));
-  border: 1px solid var(--plastic-edge);
-  border-radius: 12px;
-  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.75), 0 6px 18px rgba(0, 0, 0, 0.35);
-  color: var(--ink);
+  background: #23282E;
+  border: 1px solid #333A41;
+  border-radius: 10px;
+  overflow: hidden;
+  color: var(--text-on-dark);
   text-decoration: none;
 }
-.slab-link:hover {
-  border-color: var(--paper);
-  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.75), 0 0 0 2px var(--red), 0 6px 18px rgba(0, 0, 0, 0.35);
-}
+.tile-link:hover { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
 
-.label {
-  display: grid;
-  gap: 7px;
-  background: var(--paper);
-  border: 2px solid var(--ink);
-  border-radius: 6px;
-  padding: 9px 9px 8px;
-}
-.label-title {
-  margin: 0;
-  font-size: 13.5px;
-  font-weight: 600;
-  line-height: 1.3;
-  min-height: 3.9em; /* three lines, so the grade at the end of a title still shows */
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-}
-.label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.kind {
-  flex: none;
-  padding: 4px 6px 3px;
-  border-radius: 3px;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
-  white-space: nowrap;
-}
-.kind-bin { background: var(--ink); color: var(--paper); }
-.kind-auction { background: var(--red-fill); color: var(--paper); }
-.label-meta {
-  font-size: 12.5px;
-  font-stretch: 87%;
-  line-height: 1.25;
-  min-height: 2.5em; /* two lines, so every label is the same height and photos line up */
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  color: var(--muted);
-}
-.label-meta .soon { color: var(--red-text); font-weight: 700; }
-.label-price {
-  font-family: var(--display);
-  font-size: 26px;
-  line-height: 0.95;
-  white-space: nowrap;
-}
-
-.well {
+.tile-photo {
   position: relative;
   aspect-ratio: 3 / 4;
-  background: var(--well);
-  border-radius: 6px;
-  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.2);
-  overflow: hidden;
+  background: #2C3238;
 }
-.well img {
+.tile-photo img {
   position: absolute;
   inset: 6%;
   width: 88%;
   height: 88%;
   object-fit: contain;
 }
-.well-empty {
+.tile-photo-empty {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  color: var(--muted);
+  padding: 8px;
+  text-align: center;
+  color: var(--muted-on-dark);
   font-size: 13px;
 }
 
-/* Card sizing. Spacing follows the screen width; text follows each card's own width
-   (container queries), so a narrow card always gets text that fits. */
-.slab { container-type: inline-size; }
-.label { grid-template-columns: minmax(0, 1fr); }
+.tile-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid #333A41;
+}
+.tile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.tile-price {
+  font-family: var(--display);
+  font-size: 26px;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--paper);
+}
+.kind {
+  flex: none;
+  padding: 4px 7px 3px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.kind-bin { border-color: #6B737B; color: var(--chrome-mid); }
+.kind-auction { border-color: var(--red-fill); background: var(--red-fill); color: var(--paper); font-weight: 700; }
 .kind-short { display: none; }
-
-@media (max-width: 999px) {
-  .slab-link { gap: 7px; padding: 7px; border-radius: 10px; }
-  .label { gap: 5px; padding: 7px 7px 6px; }
-  .label-row { gap: 6px; }
+.tile-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  min-height: 3.9em; /* three lines, so the grade at the end of a title still shows */
+  color: #DDE1E5;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
+.tile-meta {
+  font-size: 12.5px;
+  font-stretch: 87%;
+  line-height: 1.25;
+  min-height: 1.25em;
+  color: var(--muted-on-dark);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+}
+.tile-meta .soon { color: #FF7A84; font-weight: 700; }
+
 @media (max-width: 559px) {
-  .slab-link {
-    gap: 5px;
-    padding: 5px;
-    border-radius: 8px;
-    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.75), 0 4px 10px rgba(0, 0, 0, 0.35);
-  }
-  .slab-link:hover { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.75), 0 0 0 2px var(--red); }
-  .label { gap: 4px; padding: 5px 5px 4px; border-width: 1.5px; border-radius: 4px; }
-  .label-row { gap: 4px; }
-  .well { border-radius: 4px; }
-  .well img { inset: 4%; width: 92%; height: 92%; }
-  .well-empty { font-size: 10px; text-align: center; }
+  .tile-link { border-radius: 8px; }
+  .tile-photo img { inset: 5%; width: 90%; height: 90%; }
 }
 
+/* Text sizes follow each tile's own width (container queries), so narrow tiles always fit */
 @container (max-width: 230px) {
-  .label-title { font-size: 12.5px; }
-  .label-price { font-size: 21px; }
-  .label-meta { font-size: 11.5px; min-height: 1.25em; -webkit-line-clamp: 1; }
-  .kind { font-size: 11px; padding: 3px 5px 2px; }
+  .tile-info { gap: 6px; padding: 10px 11px 12px; }
+  .tile-title { font-size: 12.5px; }
+  .tile-price { font-size: 21px; }
+  .tile-meta { font-size: 11.5px; }
+  .kind { font-size: 11px; padding: 3px 6px 2px; }
 }
 @container (max-width: 175px) {
-  .label-title { font-size: 11.5px; }
-  .label-price { font-size: 18px; }
+  .tile-info { padding: 8px 9px 10px; }
+  .tile-title { font-size: 11.5px; }
+  .tile-price { font-size: 18px; }
 }
 @container (max-width: 150px) {
   /* "Buy It Now" becomes "BIN"; screen readers still hear the full words */
   .kind-long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .kind-short { display: inline; }
-  .label-row { flex-wrap: wrap; row-gap: 2px; }
+  .tile-row { flex-wrap: wrap; row-gap: 2px; gap: 4px; }
 }
 @container (max-width: 130px) {
-  .label-title { font-size: 10.5px; line-height: 1.25; min-height: 3.75em; }
-  .label-price { font-size: 16px; }
-  .label-meta { font-size: 9.5px; }
-  .kind { font-size: 9px; padding: 2px 4px 1px; border-radius: 2px; }
+  .tile-info { gap: 4px; padding: 6px 6px 7px; }
+  .tile-title { font-size: 10.5px; line-height: 1.25; min-height: 3.75em; }
+  .tile-price { font-size: 16px; }
+  .tile-meta { font-size: 9.5px; }
+  .kind { font-size: 9px; padding: 2px 4px 1px; }
+  .tile-photo-empty { font-size: 10px; }
 }
 
 /* Loading placeholders */
-.slab-skel .label-title,
-.slab-skel .label-price,
-.slab-skel .kind {
-  background: var(--plastic-lo);
+.tile-skel .tile-price,
+.tile-skel .tile-title,
+.tile-skel .kind {
+  background: #2C3238;
+  border-color: transparent;
   color: transparent;
   border-radius: 3px;
 }
-.slab-skel .slab-link:hover {
-  border-color: var(--plastic-edge);
-  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.75), 0 6px 18px rgba(0, 0, 0, 0.35);
-}
+.tile-skel .tile-link:hover { border-color: #333A41; box-shadow: none; }
 
 .empty {
   padding: 40px 0 8px;
