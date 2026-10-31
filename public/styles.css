@@ -574,16 +574,20 @@ a { color: inherit; }
 
 /* ---------- Slabs ---------- */
 
+/* Fixed columns: 3 per row on phones, 4 on everything wider. 24 cards fill both evenly. */
 .grid {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
-@media (min-width: 720px) {
-  .grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 24px; }
+@media (min-width: 560px) {
+  .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+}
+@media (min-width: 1000px) {
+  .grid { gap: 22px; }
 }
 .grid[hidden] { display: none; }
 .grid:focus { outline: none; }
@@ -728,12 +732,53 @@ a { color: inherit; }
   font-size: 13px;
 }
 
-@media (max-width: 719px) {
-  .label { padding: 8px 7px 7px; }
+/* Card sizing. Spacing follows the screen width; text follows each card's own width
+   (container queries), so a narrow card always gets text that fits. */
+.slab { container-type: inline-size; }
+.label { grid-template-columns: minmax(0, 1fr); }
+.kind-short { display: none; }
+
+@media (max-width: 999px) {
+  .slab-link { gap: 7px; padding: 7px; border-radius: 10px; }
+  .label { gap: 5px; padding: 7px 7px 6px; }
   .label-row { gap: 6px; }
-  .label-price { font-size: 20px; }
-  .label-title { font-size: 13px; }
+}
+@media (max-width: 559px) {
+  .slab-link {
+    gap: 5px;
+    padding: 5px;
+    border-radius: 8px;
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.75), 0 4px 10px rgba(0, 0, 0, 0.35);
+  }
+  .slab-link:hover { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.75), 0 0 0 2px var(--red); }
+  .label { gap: 4px; padding: 5px 5px 4px; border-width: 1.5px; border-radius: 4px; }
+  .label-row { gap: 4px; }
+  .well { border-radius: 4px; }
+  .well img { inset: 4%; width: 92%; height: 92%; }
+  .well-empty { font-size: 10px; text-align: center; }
+}
+
+@container (max-width: 230px) {
+  .label-title { font-size: 12.5px; }
+  .label-price { font-size: 21px; }
+  .label-meta { font-size: 11.5px; min-height: 1.25em; -webkit-line-clamp: 1; }
   .kind { font-size: 11px; padding: 3px 5px 2px; }
+}
+@container (max-width: 175px) {
+  .label-title { font-size: 11.5px; }
+  .label-price { font-size: 18px; }
+}
+@container (max-width: 150px) {
+  /* "Buy It Now" becomes "BIN"; screen readers still hear the full words */
+  .kind-long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .kind-short { display: inline; }
+  .label-row { flex-wrap: wrap; row-gap: 2px; }
+}
+@container (max-width: 130px) {
+  .label-title { font-size: 10.5px; line-height: 1.25; min-height: 3.75em; }
+  .label-price { font-size: 16px; }
+  .label-meta { font-size: 9.5px; }
+  .kind { font-size: 9px; padding: 2px 4px 1px; border-radius: 2px; }
 }
 
 /* Loading placeholders */

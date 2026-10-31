@@ -623,7 +623,11 @@ function slab(item) {
       el('div', { className: 'label' },
         el('p', { className: 'label-title' }, item.title),
         el('div', { className: 'label-row' },
-          el('span', { className: `kind ${item.isAuction ? 'kind-auction' : 'kind-bin'}` }, item.isAuction ? 'Auction' : 'Buy It Now'),
+          item.isAuction
+            ? el('span', { className: 'kind kind-auction' }, 'Auction')
+            : el('span', { className: 'kind kind-bin', title: 'Buy It Now' },
+                el('span', { className: 'kind-long' }, 'Buy It Now'),
+                el('span', { className: 'kind-short', 'aria-hidden': 'true' }, 'BIN')),
           el('span', { className: 'label-price' }, price ? money(price) : '')
         ),
         metaEl
