@@ -85,6 +85,11 @@ async function contact(request, env) {
 }
 
 // ---------- eBay listings ----------
+// Every saved copy carries the time it was fetched from eBay (X-Listings-Saved-At), and that
+// time decides whether it's fresh. Cache expiry is never trusted on its own.
+
+const FRESH_MS = FRESH_SECONDS * 1000;
+const SAVED_AT = 'X-Listings-Saved-At';
 
 async function listings(request, env, ctx) {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -92,18 +97,31 @@ async function listings(request, env, ctx) {
   }
 
   const now = Date.now();
-  if (memo && now - memo.savedAt < FRESH_SECONDS * 1000) {
-    return ok(memo.body, request);
+
+  // 1. This server's own copy, if fresh.
+  if (memo && now - memo.savedAt < FRESH_MS) {
+    return ok(memo.body, request, memo.savedAt, now, 'memory');
   }
 
-  // Cloudflare's edge cache, shared by every visitor near the same data center.
+  // 2. The copy shared by Cloudflare's servers in this location, if fresh.
   const cache = typeof caches !== 'undefined' ? caches.default : null;
   const cacheKey = new Request(new URL('/api/listings', request.url).toString(), { method: 'GET' });
+  let shared = null; // { body, savedAt }
   if (cache) {
-    const hit = await cache.match(cacheKey);
-    if (hit) return request.method === 'HEAD' ? new Response(null, hit) : hit;
+    try {
+      const hit = await cache.match(cacheKey);
+      const savedAt = hit ? Number(hit.headers.get(SAVED_AT)) : 0;
+      if (hit && savedAt > 0) shared = { body: await hit.text(), savedAt };
+    } catch (err) {
+      console.error('[listings] cache read failed', err);
+    }
+  }
+  if (shared && now - shared.savedAt < FRESH_MS) {
+    if (!memo || shared.savedAt > memo.savedAt) memo = shared;
+    return ok(shared.body, request, shared.savedAt, now, 'shared');
   }
 
+  // 3. Fetch from eBay.
   try {
     const cfg = readConfig(env);
     const items = await fetchSellerListings(cfg);
@@ -115,16 +133,20 @@ async function listings(request, env, ctx) {
       items,
     });
     memo = { body, savedAt: now };
-
-    const res = ok(body, request);
-    if (cache && request.method === 'GET') {
-      ctx.waitUntil(cache.put(cacheKey, ok(body, request)));
+    if (cache) {
+      // Kept for a day so it can stand in during an eBay outage; freshness is checked by time above.
+      const copy = new Response(body, {
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, s-maxage=86400', [SAVED_AT]: String(now) },
+      });
+      ctx.waitUntil(cache.put(cacheKey, copy).catch((err) => console.error('[listings] cache write failed', err)));
     }
-    return res;
+    return ok(body, request, now, now, 'ebay');
   } catch (err) {
     console.error('[listings]', err);
-    if (memo && now - memo.savedAt < STALE_LIMIT_MS) {
-      return ok(memo.body, request, { 'X-Listings-Stale': '1' });
+    // 4. eBay failed: use the newest copy we have, if it's less than a day old.
+    const backup = [memo, shared].filter(Boolean).sort((a, b) => b.savedAt - a.savedAt)[0];
+    if (backup && now - backup.savedAt < STALE_LIMIT_MS) {
+      return ok(backup.body, request, backup.savedAt, now, 'backup', { 'X-Listings-Stale': '1' });
     }
     const status = err instanceof ConfigError ? 500 : 502;
     return json(
@@ -135,12 +157,16 @@ async function listings(request, env, ctx) {
   }
 }
 
-function ok(body, request, extra = {}) {
+// Browsers always come back to the Worker (no-cache); the Worker decides how fresh to be.
+// X-Listings-Source and X-Listings-Age say where a copy came from and how old it is.
+function ok(body, request, savedAt, now, source, extra = {}) {
   return new Response(request.method === 'HEAD' ? null : body, {
     status: 200,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': `public, max-age=60, s-maxage=${FRESH_SECONDS}`,
+      'Cache-Control': 'no-cache',
+      'X-Listings-Source': source,
+      'X-Listings-Age': String(Math.max(0, Math.round((now - savedAt) / 1000))),
       ...extra,
     },
   });

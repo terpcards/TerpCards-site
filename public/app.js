@@ -391,7 +391,7 @@ function bindCalendar() {
 
 async function loadListings() {
   try {
-    const res = await fetch(SITE.apiUrl, { headers: { Accept: 'application/json' } });
+    const res = await fetch(SITE.apiUrl, { cache: 'no-store', headers: { Accept: 'application/json' } });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !Array.isArray(data.items)) throw new Error(data.error || `Feed returned ${res.status}`);
 
