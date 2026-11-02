@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "check": "node --env-file=.dev.vars scripts/check-ebay.mjs"
+    "check": "node --env-file=.dev.vars scripts/check-ebay.mjs",
+    "check:whatnot": "node --env-file=.dev.vars scripts/check-whatnot.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.156.0"

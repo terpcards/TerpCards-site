@@ -1,11 +1,13 @@
 // Cloudflare Worker for the site.
 //   /api/listings  ->  your active eBay listings as JSON (runs here, keys stay secret)
+//   /api/whatnot   ->  your next Whatnot shows, and whether you're live right now
 //   /api/contact   ->  the contact form; emails the message to you
 //   everything else ->  the static page in /public (served free, the Worker isn't involved)
 
 import { EmailMessage } from 'cloudflare:email';
 import { readConfig, fetchSellerData, sellerSearchUrl, feedbackProfileUrl, ConfigError } from '../lib/ebay.js';
 import { readSubmission, buildEmail, toMime, ContactError } from '../lib/contact.js';
+import { whatnotToken, fetchSchedule } from '../lib/whatnot.js';
 
 const FRESH_SECONDS = 900;          // refresh from eBay at most every 15 minutes
 const STALE_LIMIT_MS = 24 * 3600e3; // if eBay is down, keep showing the last good list for up to a day
@@ -19,6 +21,7 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/api/listings') return listings(request, env, ctx);
+    if (url.pathname === '/api/whatnot') return whatnot(request, env, ctx);
     if (url.pathname === '/api/contact') return contact(request, env);
     if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
 
@@ -155,6 +158,64 @@ async function listings(request, env, ctx) {
       status,
       { 'Cache-Control': 'no-store' }
     );
+  }
+}
+
+// ---------- Whatnot schedule ----------
+// Checked at most once a minute per Cloudflare location, so "live now" shows up quickly.
+// If Whatnot can't be reached, the last good copy is used for up to a day (marked stale,
+// so the page uses it for the schedule but doesn't claim you're live).
+
+const WHATNOT_FRESH_MS = 60 * 1000;
+let whatnotMemo = null; // { body, savedAt }
+
+async function whatnot(request, env, ctx) {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return json({ error: 'Method not allowed' }, 405, { Allow: 'GET, HEAD' });
+  }
+  const token = whatnotToken(env);
+  if (!token) return json({ error: 'not_configured' }, 503, { 'Cache-Control': 'no-store' });
+
+  const now = Date.now();
+  if (whatnotMemo && now - whatnotMemo.savedAt < WHATNOT_FRESH_MS) {
+    return ok(whatnotMemo.body, request, whatnotMemo.savedAt, now, 'memory');
+  }
+
+  const cache = typeof caches !== 'undefined' ? caches.default : null;
+  const cacheKey = new Request(new URL('/api/whatnot', request.url).toString(), { method: 'GET' });
+  let shared = null;
+  if (cache) {
+    try {
+      const hit = await cache.match(cacheKey);
+      const savedAt = hit ? Number(hit.headers.get(SAVED_AT)) : 0;
+      if (hit && savedAt > 0) shared = { body: await hit.text(), savedAt };
+    } catch (err) {
+      console.error('[whatnot] cache read failed', err);
+    }
+  }
+  if (shared && now - shared.savedAt < WHATNOT_FRESH_MS) {
+    if (!whatnotMemo || shared.savedAt > whatnotMemo.savedAt) whatnotMemo = shared;
+    return ok(shared.body, request, shared.savedAt, now, 'shared');
+  }
+
+  try {
+    const schedule = await fetchSchedule(token, { now });
+    const body = JSON.stringify({ ...schedule, updatedAt: new Date(now).toISOString() });
+    whatnotMemo = { body, savedAt: now };
+    if (cache) {
+      const copy = new Response(body, {
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, s-maxage=86400', [SAVED_AT]: String(now) },
+      });
+      ctx.waitUntil(cache.put(cacheKey, copy).catch((err) => console.error('[whatnot] cache write failed', err)));
+    }
+    return ok(body, request, now, now, 'whatnot');
+  } catch (err) {
+    console.error('[whatnot]', err);
+    const backup = [whatnotMemo, shared].filter(Boolean).sort((a, b) => b.savedAt - a.savedAt)[0];
+    if (backup && now - backup.savedAt < STALE_LIMIT_MS) {
+      return ok(backup.body, request, backup.savedAt, now, 'backup', { 'X-Listings-Stale': '1' });
+    }
+    return json({ error: 'Could not reach Whatnot right now.' }, 502, { 'Cache-Control': 'no-store' });
   }
 }
 

@@ -10,9 +10,15 @@ const SITE = {
   xUrl: 'https://x.com/TerpCards',
 
   // Weekly Whatnot show. weekday: 0 = Sunday ... 3 = Wednesday.
+  // When the Whatnot connection is set up (WHATNOT_API_TOKEN in Cloudflare), the box uses
+  // your real schedule and live status from Whatnot, and this is only the backup.
   show: { weekday: 3, hour: 17, minute: 30, timeZone: 'America/New_York', lengthMinutes: 120 },
 
+  // Link to one show on Whatnot; {id} is replaced with the show's ID.
+  whatnotShowUrl: 'https://www.whatnot.com/live/{id}',
+
   apiUrl: '/api/listings',
+  whatnotApiUrl: '/api/whatnot',
   contactUrl: '/api/contact',
 
   // How many cards to show per page in the listings grid.
@@ -61,6 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireLinks();
   startShowClock();
   bindCalendar();
+  loadWhatnot();
   showSkeletons(8);
   bindControls();
   bindContactForm();
@@ -280,34 +287,124 @@ function untilText(ms) {
   return plural(m, 'minute');
 }
 
+// ---------- Your real schedule from Whatnot ----------
+// /api/whatnot says whether you're live and lists your next scheduled shows. Until it
+// answers (or if Whatnot isn't connected), the box uses the weekly schedule in SITE.show.
+
+let whatnot = null; // { live, upcoming: [{ id, title, startsAt }], stale, at }
+
+async function loadWhatnot() {
+  try {
+    const res = await fetch(SITE.whatnotApiUrl, { cache: 'no-store', headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error(`Whatnot feed returned ${res.status}`);
+    const data = await res.json();
+    whatnot = {
+      live: data.live || null,
+      upcoming: Array.isArray(data.upcoming) ? data.upcoming.filter((s) => s.startsAt && !Number.isNaN(Date.parse(s.startsAt))) : [],
+      stale: res.headers.get('X-Listings-Stale') === '1',
+      at: Date.now(),
+    };
+  } catch (err) {
+    if (whatnot && Date.now() - whatnot.at > 10 * 60000) whatnot = null; // too old to trust
+    if (!whatnot) console.info('Using the weekly show schedule:', err.message);
+  }
+  // Check again every minute while the page is open, so "We're live now!" appears on time.
+  clearTimeout(loadWhatnot.timer);
+  loadWhatnot.timer = setTimeout(() => {
+    if (document.visibilityState === 'visible') loadWhatnot();
+    else document.addEventListener('visibilitychange', loadWhatnot, { once: true });
+  }, 60000);
+}
+
+function showUrl(show) {
+  if (show && show.id && SITE.whatnotShowUrl) return SITE.whatnotShowUrl.replace('{id}', encodeURIComponent(show.id));
+  return SITE.whatnotUrl;
+}
+
+// What the box should show right now:
+//   { start, end, state: 'upcoming' | 'starting' | 'live', title?, url? }
+// 'starting' means the scheduled time has passed but Whatnot doesn't say you're live yet.
+function currentShow(now = new Date()) {
+  const lengthMs = SITE.show.lengthMinutes * 60000;
+  if (whatnot) {
+    if (whatnot.live && !whatnot.stale) {
+      const start = whatnot.live.startsAt ? new Date(whatnot.live.startsAt) : now;
+      return { start, end: new Date(Math.max(now, start.getTime() + lengthMs)), state: 'live', title: whatnot.live.title, url: showUrl(whatnot.live) };
+    }
+    const graceMs = Math.min(lengthMs, 60 * 60000); // how long to say "starting any minute"
+    const next = whatnot.upcoming
+      .map((s) => ({ ...s, start: new Date(s.startsAt) }))
+      .find((s) => now - s.start < graceMs && !(whatnot.live && whatnot.live.id === s.id));
+    if (next) {
+      const state = now >= next.start ? 'starting' : 'upcoming';
+      return { start: next.start, end: new Date(next.start.getTime() + lengthMs), state, title: next.title, url: showUrl(next), id: next.id };
+    }
+  }
+  const fixed = nextShow(now, SITE.show);
+  if (!fixed) return null;
+  // With Whatnot connected, only Whatnot can say you're live.
+  const state = fixed.live ? (whatnot ? 'starting' : 'live') : 'upcoming';
+  return { start: fixed.start, end: fixed.end, state };
+}
+
 function startShowClock() {
   const box = $('[data-show]');
   const next = $('[data-show-next]');
   const local = $('[data-show-local]');
   const cta = $('[data-show-cta]');
+  const name = $('[data-show-name]');
+  const nameLabel = $('[data-show-name-label]');
+  const nameLink = $('[data-show-name-link]');
   const clock = $('[data-countdown]');
   const digits = Object.fromEntries($$('[data-cd]').map((n) => [n.dataset.cd, n]));
   const labels = Object.fromEntries($$('[data-cd-label]').map((n) => [n.dataset.cdLabel, n]));
   const pad = (n) => String(n).padStart(2, '0');
   let spoken = '';
+  let heading = '';
 
   const tick = () => {
     const now = new Date();
-    const show = nextShow(now, SITE.show);
+    const show = currentShow(now);
     if (!show) return;
 
-    box.dataset.live = String(show.live);
+    box.dataset.live = String(show.state === 'live');
 
-    if (show.live) {
-      next.replaceChildren(el('span', { className: 'live-dot', 'aria-hidden': 'true' }), "We're live now!");
+    // The show's title from Whatnot, linked to its page: above the countdown, or under
+    // "We're live now!" while you're live.
+    const nameAfter = show.state === 'live';
+    if (nameAfter && next.nextElementSibling !== name) next.after(name);
+    if (!nameAfter && name.nextElementSibling !== next) next.before(name);
+    if (show.title) {
+      nameLabel.textContent = show.state === 'live' ? 'On now' : 'Up next';
+      if (nameLink.textContent !== show.title) nameLink.textContent = show.title;
+      nameLink.href = show.url;
+      name.hidden = false;
+    } else {
+      name.hidden = true;
+    }
+
+    const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const sameClock = offsetMs(show.start, viewerZone) === offsetMs(show.start, SITE.show.timeZone);
+    const fmt = (timeZone) =>
+      new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(show.start);
+    const when = sameClock ? `${fmt(SITE.show.timeZone)} ET` : `That's ${fmt(viewerZone)} your time.`;
+
+    if (show.state === 'live' || show.state === 'starting') {
+      const text = show.state === 'live' ? "We're live now!" : 'Starting any minute';
+      if (heading !== text) {
+        heading = text;
+        next.replaceChildren(...(show.state === 'live' ? [el('span', { className: 'live-dot', 'aria-hidden': 'true' })] : []), text);
+      }
       clock.hidden = true;
-      local.textContent = '';
-      cta.textContent = 'Join the show';
+      local.textContent = show.state === 'live' ? '' : when;
+      cta.textContent = show.state === 'live' ? 'Join the show' : 'Go to the show';
+      cta.href = show.url || SITE.whatnotUrl;
       spoken = '';
       return;
     }
 
     cta.textContent = 'Follow on Whatnot';
+    cta.href = SITE.whatnotUrl;
     clock.hidden = false;
 
     // The ticking digits are for the eye; screen readers get one sentence that changes
@@ -317,26 +414,21 @@ function startShowClock() {
     const d = Math.floor(secs / 86400);
     const h = Math.floor((secs % 86400) / 3600);
     const m = Math.floor((secs % 3600) / 60);
-    const s = secs % 60;
+    const sec = secs % 60;
     digits.d.textContent = d;
     digits.h.textContent = pad(h);
     digits.m.textContent = pad(m);
-    digits.s.textContent = pad(s);
+    digits.s.textContent = pad(sec);
     labels.d.textContent = d === 1 ? 'day' : 'days';
 
+    const lead = show.title ? 'Starts in' : 'Next show starts in';
     const sentence = untilText(ms);
-    if (sentence !== spoken) {
+    if (sentence !== spoken || heading !== lead) {
       spoken = sentence;
-      next.replaceChildren('Next show starts in', el('span', { className: 'sr-only' }, ` ${sentence}.`));
+      heading = lead;
+      next.replaceChildren(lead, el('span', { className: 'sr-only' }, ` ${sentence}.`));
     }
-
-    const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const sameClock = offsetMs(show.start, viewerZone) === offsetMs(show.start, SITE.show.timeZone);
-    const fmt = (timeZone) =>
-      new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(show.start);
-    local.textContent = sameClock
-      ? `${fmt(SITE.show.timeZone)} ET`
-      : `That's ${fmt(viewerZone)} your time.`;
+    local.textContent = when;
   };
 
   // Tick right on each new second so the digits change in step with the real clock.
@@ -348,20 +440,32 @@ function startShowClock() {
 }
 
 // ---------- Add next show to calendar ----------
-// Both options are built from SITE.show above, so they follow any schedule change automatically.
+// Uses your next show from Whatnot when it's connected, otherwise the weekly schedule in SITE.show.
 
 const SHOW_TITLE = 'TerpCards live on Whatnot';
 
-// The show to add: the upcoming one, or next week's if a show is live right now.
+// The show to add: the next one that hasn't started yet.
 function calendarShow(now = new Date()) {
+  const lengthMs = SITE.show.lengthMinutes * 60000;
+  if (whatnot) {
+    const next = whatnot.upcoming
+      .map((s) => ({ ...s, start: new Date(s.startsAt) }))
+      .find((s) => s.start > now && !(whatnot.live && whatnot.live.id === s.id));
+    if (next) return { start: next.start, end: new Date(next.start.getTime() + lengthMs), title: next.title, url: showUrl(next) };
+  }
   const show = nextShow(now, SITE.show);
   if (!show) return null;
   return show.live ? nextShow(new Date(show.end.getTime() + 1000), SITE.show) : show;
 }
 
-function showDetails() {
+function calendarTitle(show) {
+  return show.title ? `TerpCards on Whatnot: ${show.title}` : SHOW_TITLE;
+}
+
+function showDetails(show) {
   const lines = ['Live sports card show from TerpCards on Whatnot.'];
-  if (SITE.whatnotUrl) lines.push(`Join here: ${SITE.whatnotUrl}`);
+  const url = show.url || SITE.whatnotUrl;
+  if (url) lines.push(`Join here: ${url}`);
   return lines.join('\n');
 }
 
@@ -371,11 +475,12 @@ const calTime = (date) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d{
 function googleCalendarUrl(show) {
   const params = new URLSearchParams({
     action: 'TEMPLATE',
-    text: SHOW_TITLE,
+    text: calendarTitle(show),
     dates: `${calTime(show.start)}/${calTime(show.end)}`,
-    details: showDetails(),
+    details: showDetails(show),
   });
-  if (SITE.whatnotUrl) params.set('location', SITE.whatnotUrl);
+  const url = show.url || SITE.whatnotUrl;
+  if (url) params.set('location', url);
   return `https://calendar.google.com/calendar/render?${params}`;
 }
 
@@ -400,10 +505,10 @@ function icsFile(show, now = new Date()) {
     `DTSTAMP:${calTime(now)}`,
     `DTSTART:${calTime(show.start)}`,
     `DTEND:${calTime(show.end)}`,
-    `SUMMARY:${esc(SHOW_TITLE)}`,
-    `DESCRIPTION:${esc(showDetails())}`,
-    SITE.whatnotUrl && `LOCATION:${esc(SITE.whatnotUrl)}`,
-    SITE.whatnotUrl && `URL:${SITE.whatnotUrl}`,
+    `SUMMARY:${esc(calendarTitle(show))}`,
+    `DESCRIPTION:${esc(showDetails(show))}`,
+    (show.url || SITE.whatnotUrl) && `LOCATION:${esc(show.url || SITE.whatnotUrl)}`,
+    (show.url || SITE.whatnotUrl) && `URL:${show.url || SITE.whatnotUrl}`,
     'BEGIN:VALARM',
     'ACTION:DISPLAY',
     'TRIGGER:-PT15M',

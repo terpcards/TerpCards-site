@@ -226,6 +226,31 @@ a { color: inherit; }
   font-size: 18px;
   font-weight: 700;
 }
+/* The next show's title from Whatnot */
+.show-name {
+  margin: -6px 0 14px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.show-name[hidden] { display: none; }
+.show-name-label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+.show-name-link {
+  color: var(--paper);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.45);
+  text-underline-offset: 3px;
+}
+.show-name-link:hover { text-decoration-color: currentColor; }
+.show[data-live="true"] .show-name { margin: 8px 0 16px; }
+
 .show-next {
   margin: 0;
   font-size: 17px;

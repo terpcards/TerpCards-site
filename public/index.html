@@ -55,6 +55,11 @@
         <aside class="show" aria-labelledby="show-title" data-show>
           <h2 class="show-title" id="show-title">Live on Whatnot</h2>
           <p class="show-when">Every Wednesday at 5:30&nbsp;PM&nbsp;ET</p>
+          <!-- The next show's title from Whatnot, filled in by app.js when Whatnot is connected. -->
+          <p class="show-name" data-show-name hidden>
+            <span class="show-name-label" data-show-name-label>Up next</span>
+            <a class="show-name-link" data-show-name-link href="#" target="_blank" rel="noopener"></a>
+          </p>
           <p class="show-next" data-show-next></p>
           <div class="countdown" data-countdown aria-hidden="true" hidden>
             <span class="cd-unit"><span class="cd-num" data-cd="d">0</span><span class="cd-label" data-cd-label="d">days</span></span>

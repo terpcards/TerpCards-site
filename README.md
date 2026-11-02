@@ -8,11 +8,13 @@ It runs on **Cloudflare Workers' free plan**. The page files are served free wit
 public/index.html       the page
 public/styles.css       all styling (colors and fonts are at the top)
 public/app.js           page behavior; your links and show schedule are at the top
-src/worker.js           Cloudflare Worker: /api/listings (your eBay listings) and /api/contact (the form)
+src/worker.js           Cloudflare Worker: /api/listings (eBay), /api/whatnot (your shows) and /api/contact (the form)
 lib/ebay.js             talks to eBay's Browse API (token, paging, cleanup)
+lib/whatnot.js          talks to Whatnot's Seller API (your show schedule and live status)
 lib/contact.js          checks contact form messages and turns them into an email
 wrangler.jsonc          Cloudflare settings, including your eBay username
 scripts/check-ebay.mjs  tests your eBay keys from the terminal
+scripts/check-whatnot.mjs  shows what Whatnot's API returns for your account
 ```
 
 Your eBay secret only ever lives on Cloudflare. The browser just calls `/api/listings`.
@@ -163,13 +165,28 @@ Next to the "On eBay now" heading, the site shows your eBay feedback, like "99.8
 
 ## The Whatnot box
 
-The countdown, the "Join the show" switch while you're live, and the **Add next show to calendar** button all come from one setting in `public/app.js`:
+With your Whatnot token connected (below), the box follows your real Whatnot schedule:
+
+- **Up next:** the title of your next scheduled show, linked to its page on Whatnot, with a ticking countdown to its actual start time. Bonus shows, skipped weeks and time changes show up on their own.
+- **Live:** when Whatnot says you're live, the box switches to "We're live now!" with the show's title, and the button becomes **Join the show**, linked straight to it. The site checks about once a minute.
+- **Starting any minute:** if the scheduled time passes and you haven't gone live yet, the box says so instead of claiming you're live.
+- **Add next show to calendar** adds your next scheduled show, with its title and link.
+
+Without the token, or if Whatnot can't be reached, the box falls back to the weekly schedule in `public/app.js`:
 
 ```js
 show: { weekday: 3, hour: 17, minute: 30, timeZone: 'America/New_York', lengthMinutes: 120 },
 ```
 
-`lengthMinutes: 120` is the live window: from 5:30 to 7:30 PM ET the box says "We're live now!" and the button becomes "Join the show". If the show moves or runs longer, change it there (and the "Every Wednesday at 5:30 PM ET" line in `public/index.html`). The calendar options add the upcoming show (next week's, if you're live right now) with your Whatnot link and a 15-minute reminder: one opens Google Calendar, the other downloads a calendar file for Apple Calendar, Outlook and others.
+`lengthMinutes` is how long a show runs, used for calendar entries and for the fallback "We're live now!" window. If your regular day or time changes, update it there and in the "Every Wednesday at 5:30 PM ET" line in `public/index.html`.
+
+### Connecting Whatnot
+
+1. In Whatnot's developer dashboard, create a personal access token with read-only permissions (`read:shows` is all the box needs).
+2. In Cloudflare, open your Worker, go to **Settings → Variables and Secrets**, and add `WHATNOT_API_TOKEN` with the type **Secret**.
+3. For testing on your computer, add `WHATNOT_API_TOKEN=...` to `.dev.vars`. `npm run check:whatnot` prints what Whatnot returns for your account and saves the details to `whatnot-check.json` (git-ignored, since it includes sales numbers).
+
+The page only ever receives your shows' IDs, titles and start times. Show links use `whatnotShowUrl` in the settings block of `public/app.js`.
 
 ## How the feed works
 
