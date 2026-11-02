@@ -18,8 +18,8 @@ const SITE = {
   // How many cards to show per page in the listings grid.
   perPage: 24,
 
-  // Your eBay feedback shows under the buttons at the top, but only while it's at least
-  // this percent positive. Set it to 101 to hide the badge.
+  // Your eBay feedback shows next to the "On eBay now" heading, but only while it's at
+  // least this percent positive. Set it to 101 to hide it.
   feedbackMinPercent: 98,
 
   // When the eBay feed has no listings to give (no API keys yet, or a long eBay outage):
@@ -481,7 +481,7 @@ async function loadListings() {
   render();
 }
 
-// "99.8% positive feedback on eBay (1,234)" under the buttons at the top.
+// "★ 99.8% positive feedback (1,234)" next to the "On eBay now" heading.
 function showFeedback() {
   const badge = $('[data-feedback]');
   const fb = state.feedback;
@@ -489,9 +489,11 @@ function showFeedback() {
     badge.hidden = true;
     return;
   }
-  $('[data-feedback-percent]', badge).textContent =
-    `${fb.percent.toLocaleString('en-US', { maximumFractionDigits: 1 })}% positive feedback`;
-  $('[data-feedback-score]', badge).textContent = fb.score != null ? `(${fb.score.toLocaleString('en-US')})` : '';
+  const percent = `${fb.percent.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
+  const score = fb.score != null ? fb.score.toLocaleString('en-US') : '';
+  $('[data-feedback-percent]', badge).textContent = `${percent} positive feedback`;
+  $('[data-feedback-score]', badge).textContent = score ? `(${score})` : '';
+  badge.setAttribute('aria-label', `${percent} positive feedback on eBay${score ? `, feedback score ${score}` : ''}. Opens eBay.`);
   badge.href = fb.url || ebayLink();
   badge.hidden = false;
 }

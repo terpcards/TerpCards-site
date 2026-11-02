@@ -50,11 +50,6 @@
             <a class="btn btn-primary" href="#listings">Browse listings</a>
             <a class="btn btn-outline" data-link="ebay" href="#" target="_blank" rel="noopener">Open my eBay store</a>
           </div>
-          <!-- Your eBay feedback, filled in by app.js from the listings feed. -->
-          <a class="trust" data-feedback href="#" target="_blank" rel="noopener" hidden>
-            <svg class="trust-star" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.6l2.5 5.2 5.7.8-4.1 4 1 5.6L10 14.5l-5.1 2.7 1-5.6-4.1-4 5.7-.8z"/></svg>
-            <span><strong data-feedback-percent></strong> on eBay <span class="trust-end"><span class="trust-score" data-feedback-score></span><svg class="topbar-icon" viewBox="0 0 12 12" aria-hidden="true"><path d="M5 2.5H2.5v7h7V7M7 2.5h2.5V5M9.5 2.5 5.5 6.5"/></svg></span></span>
-          </a>
         </div>
 
         <aside class="show" aria-labelledby="show-title" data-show>
@@ -88,7 +83,16 @@
     <div class="wrap">
       <div class="shelf-head">
         <div>
-          <h2 class="shelf-title">On eBay now</h2>
+          <div class="shelf-title-row">
+            <h2 class="shelf-title">On eBay now</h2>
+            <!-- Your eBay feedback, filled in by app.js from the listings feed. -->
+            <a class="trust" data-feedback href="#" target="_blank" rel="noopener" hidden>
+              <svg class="trust-star" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.6l2.5 5.2 5.7.8-4.1 4 1 5.6L10 14.5l-5.1 2.7 1-5.6-4.1-4 5.7-.8z"/></svg>
+              <strong data-feedback-percent></strong>
+              <span class="trust-score" data-feedback-score></span>
+              <svg class="topbar-icon" viewBox="0 0 12 12" aria-hidden="true"><path d="M5 2.5H2.5v7h7V7M7 2.5h2.5V5M9.5 2.5 5.5 6.5"/></svg>
+            </a>
+          </div>
           <p class="status" data-status aria-live="polite">Loading listings…</p>
         </div>
         <a class="see-all" data-link="ebay" data-see-all href="#" target="_blank" rel="noopener">See everything on eBay</a>

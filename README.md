@@ -1,6 +1,6 @@
 # TerpCards site
 
-A one-page card shop site. The main section is a live grid of your active eBay listings. Each card links to its eBay listing and has a **Make an offer** button that opens the contact form with that card filled in. Below the grid, an **I buy cards** section invites people selling cards to get in touch. Above the grid, visitors can narrow the cards to graded or raw, and your eBay feedback shows near the top of the page. There's also a Whatnot block that counts down to your Wednesday 5:30 PM ET show and converts the time for visitors in other time zones.
+A one-page card shop site. The main section is a live grid of your active eBay listings. Each card links to its eBay listing and has a **Make an offer** button that opens the contact form with that card filled in. Below the grid, an **I buy cards** section invites people selling cards to get in touch. Above the grid, visitors can narrow the cards to graded or raw, and your eBay feedback shows next to the listings heading. There's also a Whatnot block that counts down to your Wednesday 5:30 PM ET show and converts the time for visitors in other time zones.
 
 It runs on **Cloudflare Workers' free plan**. The page files are served free with no limit, and only the listings feed (`/api/listings`) counts toward the free 100,000 requests a day, which caching keeps to a tiny fraction. Your only ongoing cost is the yearly domain renewal.
 
@@ -159,7 +159,7 @@ The grading companies it knows are in `GRADERS` in `public/app.js` (PSA, BGS, BV
 
 ## eBay feedback badge
 
-Under the buttons at the top, the site shows your eBay feedback, like "99.8% positive feedback on eBay (1,234)", linked to your feedback page. It comes from eBay along with your listings, so it stays current on its own. It only shows while your feedback is at least `feedbackMinPercent` (98 by default) in the settings block of `public/app.js`; set that to 101 to hide it.
+Next to the "On eBay now" heading, the site shows your eBay feedback, like "99.8% positive feedback (1,234)", linked to your feedback page. It comes from eBay along with your listings, so it stays current on its own. It only shows while your feedback is at least `feedbackMinPercent` (98 by default) in the settings block of `public/app.js`; set that to 101 to hide it.
 
 ## The Whatnot box
 
