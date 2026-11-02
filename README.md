@@ -186,7 +186,29 @@ show: { weekday: 3, hour: 17, minute: 30, timeZone: 'America/New_York', lengthMi
 2. In Cloudflare, open your Worker, go to **Settings → Variables and Secrets**, and add `WHATNOT_API_TOKEN` with the type **Secret**.
 3. For testing on your computer, add `WHATNOT_API_TOKEN=...` to `.dev.vars`. `npm run check:whatnot` prints what Whatnot returns for your account and saves the details to `whatnot-check.json` (git-ignored, since it includes sales numbers).
 
-The page only ever receives your shows' IDs, titles and start times. Show links use `whatnotShowUrl` in the settings block of `public/app.js`.
+The page only ever receives your shows' IDs, titles and start times, plus the two lifetime stats below. Show links use `whatnotShowUrl` in the settings block of `public/app.js`.
+
+### Whatnot stats
+
+At the bottom of the box: your lifetime **sales on Whatnot** and **average show rating**.
+
+- **Sales** is the number of orders across every show, as Whatnot's show analytics count them.
+- **Average show rating** is the average of each show's viewer rating. Whatnot's API doesn't include your seller reviews, so this is the closest thing to it.
+
+How it stays current: every 30 minutes (the `"triggers"` line in `wrangler.jsonc`), the Worker checks for shows that have ended since last time and adds their numbers. A show's numbers are final once Whatnot has calculated them, usually a few hours after it ends, so each show is fetched once and kept in Cloudflare KV storage. The very first count goes through all your past shows over a few runs, and the stats appear once every show is counted.
+
+The stats need a KV namespace, which is free:
+
+1. In the Cloudflare dashboard, go to **Storage & databases → Workers KV → Create instance**, name it `terpcards-whatnot-stats`, and create it.
+2. Copy its **ID** and put it in `wrangler.jsonc`:
+   ```jsonc
+   "kv_namespaces": [
+     { "binding": "WHATNOT_STATS", "id": "paste-the-id-here" }
+   ],
+   ```
+3. Push. The stats show up within about an hour.
+
+`npm run check:whatnot` also prints your lifetime totals, worked out the same way, if you want to check the numbers.
 
 ## How the feed works
 

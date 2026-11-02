@@ -336,6 +336,21 @@ a { color: inherit; }
   text-decoration: none;
 }
 .cal-menu a:hover { background: rgba(255, 255, 255, 0.16); }
+/* Lifetime Whatnot stats at the bottom of the box: big number, small label underneath */
+.show-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin: 22px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+}
+.show-stats[hidden], .show-stat[hidden] { display: none; }
+.show-stat { display: flex; flex-direction: column-reverse; gap: 6px; }
+.show-stat dt { font-size: 13px; font-weight: 600; opacity: 0.9; }
+.show-stat dd { margin: 0; font-family: var(--display); font-size: 34px; line-height: 1; }
+.stat-star { margin-left: 4px; font-family: var(--text); font-size: 0.7em; vertical-align: 0.12em; }
+
 /* While the show is live (5:30 to 7:30 PM ET by default): big "We're live now!" with a pulsing dot */
 .show[data-live="true"] .show-next {
   display: flex;

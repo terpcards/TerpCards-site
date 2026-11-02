@@ -304,6 +304,7 @@ async function loadWhatnot() {
       stale: res.headers.get('X-Listings-Stale') === '1',
       at: Date.now(),
     };
+    showWhatnotStats(data.stats);
   } catch (err) {
     if (whatnot && Date.now() - whatnot.at > 10 * 60000) whatnot = null; // too old to trust
     if (!whatnot) console.info('Using the weekly show schedule:', err.message);
@@ -314,6 +315,26 @@ async function loadWhatnot() {
     if (document.visibilityState === 'visible') loadWhatnot();
     else document.addEventListener('visibilitychange', loadWhatnot, { once: true });
   }, 60000);
+}
+
+// "9,412 sales on Whatnot" and "5.0★ average show rating" at the bottom of the box.
+function showWhatnotStats(stats) {
+  const box = $('[data-show-stats]');
+  if (!stats || !(stats.sales > 0)) {
+    box.hidden = true;
+    return;
+  }
+  $('[data-stat-sales]').textContent = stats.sales.toLocaleString('en-US');
+  const hasRating = typeof stats.rating === 'number';
+  $('[data-stat-rating-wrap]').hidden = !hasRating;
+  if (hasRating) {
+    $('[data-stat-rating]').replaceChildren(
+      stats.rating.toFixed(1),
+      el('span', { className: 'stat-star', 'aria-hidden': 'true' }, '★'),
+      el('span', { className: 'sr-only' }, ' out of 5')
+    );
+  }
+  box.hidden = false;
 }
 
 function showUrl(show) {

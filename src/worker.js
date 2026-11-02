@@ -7,7 +7,7 @@
 import { EmailMessage } from 'cloudflare:email';
 import { readConfig, fetchSellerData, sellerSearchUrl, feedbackProfileUrl, ConfigError } from '../lib/ebay.js';
 import { readSubmission, buildEmail, toMime, ContactError } from '../lib/contact.js';
-import { whatnotToken, fetchSchedule } from '../lib/whatnot.js';
+import { whatnotToken, fetchSchedule, refreshStats, summarizeStats } from '../lib/whatnot.js';
 
 const FRESH_SECONDS = 900;          // refresh from eBay at most every 15 minutes
 const STALE_LIMIT_MS = 24 * 3600e3; // if eBay is down, keep showing the last good list for up to a day
@@ -26,6 +26,11 @@ export default {
     if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
 
     return env.ASSETS.fetch(request);
+  },
+
+  // Runs on the schedule in wrangler.jsonc ("triggers"): keeps the lifetime Whatnot stats current.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(updateWhatnotStats(env).catch((err) => console.error('[whatnot stats]', err)));
   },
 };
 
@@ -199,8 +204,8 @@ async function whatnot(request, env, ctx) {
   }
 
   try {
-    const schedule = await fetchSchedule(token, { now });
-    const body = JSON.stringify({ ...schedule, updatedAt: new Date(now).toISOString() });
+    const [schedule, stats] = await Promise.all([fetchSchedule(token, { now }), readWhatnotStats(env, ctx)]);
+    const body = JSON.stringify({ ...schedule, stats, updatedAt: new Date(now).toISOString() });
     whatnotMemo = { body, savedAt: now };
     if (cache) {
       const copy = new Response(body, {
@@ -217,6 +222,45 @@ async function whatnot(request, env, ctx) {
     }
     return json({ error: 'Could not reach Whatnot right now.' }, 502, { 'Cache-Control': 'no-store' });
   }
+}
+
+// ---------- Lifetime Whatnot stats ----------
+// Saved in Cloudflare KV (the WHATNOT_STATS binding in wrangler.jsonc) and brought up to
+// date by the scheduled run. The first time, it takes a few runs to go through every show.
+
+const STATS_KEY = 'whatnot-stats';
+let statsKickedAt = 0;
+
+async function updateWhatnotStats(env) {
+  const token = whatnotToken(env);
+  if (!token || !env.WHATNOT_STATS) return null;
+  const saved = await env.WHATNOT_STATS.get(STATS_KEY, 'json');
+  const next = await refreshStats(token, saved, { maxRequests: 35 });
+  await env.WHATNOT_STATS.put(STATS_KEY, JSON.stringify(next));
+  const t = summarizeStats(next);
+  console.log(`[whatnot stats] ${Object.keys(next.shows).length}/${next.endedShows} shows, ${t.sales} sales, complete: ${next.complete}`);
+  return next;
+}
+
+// What the page shows: lifetime sales and average show rating. Nothing until every show
+// has been counted, so a half-finished first run never shows a low number.
+async function readWhatnotStats(env, ctx) {
+  if (!env.WHATNOT_STATS) return null;
+  let saved = null;
+  try {
+    saved = await env.WHATNOT_STATS.get(STATS_KEY, 'json');
+  } catch (err) {
+    console.error('[whatnot stats] read failed', err);
+    return null;
+  }
+  // Not finished yet (or never run): nudge it along now instead of waiting for the next scheduled run.
+  if ((!saved || !saved.complete) && Date.now() - statsKickedAt > 10 * 60e3) {
+    statsKickedAt = Date.now();
+    ctx.waitUntil(updateWhatnotStats(env).catch((err) => console.error('[whatnot stats]', err)));
+  }
+  const t = summarizeStats(saved);
+  if (!t.complete || t.sales <= 0) return null;
+  return { sales: t.sales, rating: t.rating == null ? null : Math.round(t.rating * 100) / 100, shows: t.shows };
 }
 
 // Browsers always come back to the Worker (no-cache); the Worker decides how fresh to be.

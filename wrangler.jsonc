@@ -33,6 +33,9 @@
      { "name": "CONTACT_EMAIL", "destination_address": "terpcards@gmail.com" }
    ],
 
+  // Every 30 minutes: brings the lifetime Whatnot stats up to date (README: "Whatnot stats").
+  "triggers": { "crons": ["*/30 * * * *"] },
+
   // Keeps recent logs in the dashboard so you can see errors from the eBay feed.
   "observability": {
     "enabled": true

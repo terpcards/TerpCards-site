@@ -4,7 +4,7 @@
 // whatnot-check.json (git-ignored, since it includes sales numbers). It never saves the token.
 
 import { writeFileSync } from 'node:fs';
-import { whatnotToken, currentUser, listShows, showAnalytics } from '../lib/whatnot.js';
+import { whatnotToken, currentUser, listShows, showAnalytics, refreshStats, summarizeStats } from '../lib/whatnot.js';
 
 const token = whatnotToken(process.env);
 if (!token) {
@@ -70,6 +70,18 @@ out.totals = {
   averageRating: rated.length ? rated.reduce((n, a) => n + a.average_rating, 0) / rated.length : null,
 };
 console.log('\nAcross those shows:', out.totals);
+
+// Lifetime totals, worked out the same way the site does (here in one go, every show).
+console.log('\nWorking out lifetime totals across every show (this takes a moment)...');
+const lifetime = await attempt('lifetime stats', () => refreshStats(token, null, { maxRequests: 1000 }));
+if (lifetime) {
+  const t = summarizeStats(lifetime);
+  out.lifetime = { ...t, endedShows: lifetime.endedShows };
+  console.log(`  Sales (Whatnot orders): ${t.sales.toLocaleString('en-US')}  (giveaway orders: ${t.giveaways.toLocaleString('en-US')})`);
+  console.log(`  Average show rating:    ${t.rating == null ? 'none yet' : t.rating.toFixed(2)} across ${t.ratedShows} rated shows`);
+  console.log(`  Shows with sales:       ${t.shows}`);
+  console.log(`  Every show counted:     ${t.complete ? 'yes' : 'no'}`);
+}
 
 writeFileSync(new URL('../whatnot-check.json', import.meta.url), JSON.stringify(out, null, 2));
 console.log('\nSaved the details to whatnot-check.json.');
