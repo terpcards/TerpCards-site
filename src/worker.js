@@ -4,7 +4,7 @@
 //   everything else ->  the static page in /public (served free, the Worker isn't involved)
 
 import { EmailMessage } from 'cloudflare:email';
-import { readConfig, fetchSellerListings, sellerSearchUrl, ConfigError } from '../lib/ebay.js';
+import { readConfig, fetchSellerData, sellerSearchUrl, feedbackProfileUrl, ConfigError } from '../lib/ebay.js';
 import { readSubmission, buildEmail, toMime, ContactError } from '../lib/contact.js';
 
 const FRESH_SECONDS = 900;          // refresh from eBay at most every 15 minutes
@@ -124,10 +124,11 @@ async function listings(request, env, ctx) {
   // 3. Fetch from eBay.
   try {
     const cfg = readConfig(env);
-    const items = await fetchSellerListings(cfg);
+    const { items, feedback } = await fetchSellerData(cfg);
     const body = JSON.stringify({
       seller: cfg.seller,
       sellerUrl: sellerSearchUrl(cfg.seller),
+      feedback: feedback ? { ...feedback, url: feedbackProfileUrl(cfg.seller) } : null,
       updatedAt: new Date(now).toISOString(),
       count: items.length,
       items,

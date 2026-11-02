@@ -206,6 +206,26 @@ a { color: inherit; }
 
 .cta-row { display: flex; flex-wrap: wrap; gap: 12px; }
 
+/* eBay feedback under the buttons: "★ 99.8% positive feedback on eBay (1,234)" */
+.trust {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 18px;
+  color: var(--text-on-dark);
+  font-size: 15px;
+  line-height: 1.3;
+  text-decoration: none;
+}
+.trust[hidden] { display: none; }
+.trust strong { font-weight: 700; }
+.trust:hover strong { text-decoration: underline; text-underline-offset: 3px; }
+.trust-star { flex: none; width: 18px; height: 18px; margin-top: 0.5px; fill: var(--red); }
+/* The score and the link arrow stay together if the line wraps. */
+.trust-end { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.trust-score { color: var(--muted-on-dark); }
+.trust-score:empty { display: none; }
+
 /* Slanted red banner for the weekly show. */
 .show {
   background: var(--red-fill);

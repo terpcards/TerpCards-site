@@ -3,7 +3,7 @@
 // Reads your keys from .dev.vars and your settings (EBAY_SELLER etc.) from wrangler.jsonc.
 
 import { readFileSync } from 'node:fs';
-import { readConfig, fetchSellerListings, sellerSearchUrl } from '../lib/ebay.js';
+import { readConfig, fetchSellerData, sellerSearchUrl } from '../lib/ebay.js';
 
 // Use the "vars" from wrangler.jsonc, unless .dev.vars sets the same name.
 try {
@@ -22,8 +22,13 @@ try {
 try {
   const cfg = readConfig(process.env);
   console.log(`Looking up active listings for "${cfg.seller}" in categories ${cfg.categoryIds.join(', ')}...`);
-  const items = await fetchSellerListings(cfg);
-  console.log(`\nFound ${items.length} listing(s).\n`);
+  const { items, feedback } = await fetchSellerData(cfg);
+  console.log(`\nFound ${items.length} listing(s).`);
+  if (feedback) {
+    const score = feedback.score != null ? `, feedback score ${feedback.score}` : '';
+    console.log(`eBay feedback: ${feedback.percent}% positive${score}`);
+  }
+  console.log('');
 
   for (const item of items.slice(0, 10)) {
     const p = item.isAuction && item.currentBid ? item.currentBid : item.price;

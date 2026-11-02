@@ -18,6 +18,10 @@ const SITE = {
   // How many cards to show per page in the listings grid.
   perPage: 24,
 
+  // Your eBay feedback shows under the buttons at the top, but only while it's at least
+  // this percent positive. Set it to 101 to hide the badge.
+  feedbackMinPercent: 98,
+
   // When the eBay feed has no listings to give (no API keys yet, or a long eBay outage):
   //   'local' = show sample cards only when you open the site on your own computer,
   //             and a "Shop my eBay store" section everywhere else (recommended)
@@ -43,6 +47,7 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const state = {
   items: [],
   filter: 'all',
+  grade: 'any', // 'any' | 'graded' | 'raw'
   query: '',
   sort: 'new',
   page: 1,
@@ -449,6 +454,7 @@ async function loadListings() {
     if (!res.ok || !Array.isArray(data.items)) throw new Error(data.error || `Feed returned ${res.status}`);
 
     state.items = data.items;
+    state.feedback = data.feedback || null;
     state.sellerUrl = data.sellerUrl || '';
     state.updatedAt = data.updatedAt ? new Date(data.updatedAt) : new Date();
   } catch (err) {
@@ -460,6 +466,7 @@ async function loadListings() {
       return;
     }
     state.items = sampleListings();
+    state.feedback = { percent: 100, score: 1234, url: '#' }; // sample, only on your computer
     state.sample = true;
     state.updatedAt = new Date();
     const notice = $('[data-notice]');
@@ -467,9 +474,26 @@ async function loadListings() {
     notice.hidden = false;
   }
 
+  for (const item of state.items) item.graded = isGraded(item.title);
   wireLinks();
+  showFeedback();
   $('[data-controls]').hidden = state.items.length === 0;
   render();
+}
+
+// "99.8% positive feedback on eBay (1,234)" under the buttons at the top.
+function showFeedback() {
+  const badge = $('[data-feedback]');
+  const fb = state.feedback;
+  if (!fb || !(fb.percent >= (SITE.feedbackMinPercent ?? 0))) {
+    badge.hidden = true;
+    return;
+  }
+  $('[data-feedback-percent]', badge).textContent =
+    `${fb.percent.toLocaleString('en-US', { maximumFractionDigits: 1 })}% positive feedback`;
+  $('[data-feedback-score]', badge).textContent = fb.score != null ? `(${fb.score.toLocaleString('en-US')})` : '';
+  badge.href = fb.url || ebayLink();
+  badge.hidden = false;
 }
 
 // Shown instead of the grid when there are no live listings to display.
@@ -489,6 +513,15 @@ function bindControls() {
       state.filter = btn.dataset.filter;
       state.page = 1;
       for (const b of $$('[data-filter]')) b.setAttribute('aria-pressed', String(b === btn));
+      render();
+    });
+  }
+  // Graded / Raw: pick one to narrow the grid, tap it again to show both.
+  for (const btn of $$('[data-grade]')) {
+    btn.addEventListener('click', () => {
+      state.grade = state.grade === btn.dataset.grade ? 'any' : btn.dataset.grade;
+      state.page = 1;
+      for (const b of $$('[data-grade]')) b.setAttribute('aria-pressed', String(b.dataset.grade === state.grade));
       render();
     });
   }
@@ -515,9 +548,34 @@ function shownPrice(item) {
 }
 
 function matchesFilter(item) {
+  if (state.grade === 'graded' && !item.graded) return false;
+  if (state.grade === 'raw' && item.graded) return false;
   if (state.filter === 'bin') return item.isBuyItNow;
   if (state.filter === 'auction') return item.isAuction;
   return true;
+}
+
+// Graded or raw, from the listing title. A grading company with a grade ("PSA 10",
+// "BGS 9.5", "SGC Mint 9", "PSA10") or "Authentic" counts as graded, as do the words
+// "graded" and "slab". Words like "raw", "candidate" or "PSA ready" mean raw, even
+// when a grading company is named.
+const GRADERS = 'PSA|BGS|BVG|SGC|CGC|CSG|TAG|HGA|Beckett|MBA|ISA|GMA|KSA';
+const GRADE_WORDS = '(?:gem|mint|mt|nm|pristine|black\\s*label|bl)';
+const GRADED_RE = new RegExp(`\\b(?:${GRADERS})[\\s#:-]*(?:${GRADE_WORDS}\\b[\\s-]*)*(?:10|[1-9](?:\\.5)?)(?![\\d.])`, 'i');
+const AUTH_RE = new RegExp(`\\b(?:${GRADERS})\\b[\\s#:-]*(?:authentic|auth|altered)\\b`, 'i');
+const SLAB_RE = /\b(?:graded|slab|slabbed)\b/i;
+const RAW_RE = new RegExp([
+  '\\b(?:raw|ungraded|candidate|worthy|potential)\\b',
+  '\\bnot\\s+graded\\b',
+  '\\bgrad(?:e|ing)\\s+ready\\b',
+  `\\b(?:${GRADERS})[\\s-]*ready\\b`,
+  `\\b(?:${GRADERS})\\s*(?:10|[1-9](?:\\.5)?)\\s*\\?`,
+].join('|'), 'i');
+
+function isGraded(title) {
+  const text = String(title || '');
+  if (RAW_RE.test(text)) return false;
+  return GRADED_RE.test(text) || AUTH_RE.test(text) || SLAB_RE.test(text);
 }
 
 function matchesQuery(item) {
@@ -539,6 +597,8 @@ function render() {
   $('[data-count="all"]').textContent = all.length;
   $('[data-count="bin"]').textContent = all.filter((i) => i.isBuyItNow).length;
   $('[data-count="auction"]').textContent = all.filter((i) => i.isAuction).length;
+  $('[data-count="graded"]').textContent = all.filter((i) => i.graded).length;
+  $('[data-count="raw"]').textContent = all.filter((i) => !i.graded).length;
 
   const shown = all.filter(matchesFilter).filter(matchesQuery).sort(sorters[state.sort]);
   const perPage = Math.max(1, SITE.perPage || 24);
@@ -637,10 +697,12 @@ function goToPage(n) {
 
 function resetView() {
   state.filter = 'all';
+  state.grade = 'any';
   state.query = '';
   state.page = 1;
   $('[data-search]').value = '';
   for (const b of $$('[data-filter]')) b.setAttribute('aria-pressed', String(b.dataset.filter === 'all'));
+  for (const b of $$('[data-grade]')) b.setAttribute('aria-pressed', 'false');
   render();
 }
 
