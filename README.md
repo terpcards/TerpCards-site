@@ -69,9 +69,10 @@ If `npm run check` finds nothing, double-check `EBAY_SELLER` (your exact usernam
 | Category ID | What it covers |
 |---|---|
 | `212` (default) | Sports Trading Cards: singles, sealed, lots, supplies |
-| `183454` | Non-sport trading card singles (Pokémon etc.) |
+| `183454` | Collectible card game singles (Pokémon, Dragon Ball, etc.) |
+| `183050` | Non-sport trading card singles (Disney, SpongeBob, etc.) |
 
-Use several with commas: `"212,183454"`. eBay only allows one category per request, so each one is fetched separately and merged.
+Use several with commas. The site is set to `"212,183454,183050"`, which covers everything you list today. eBay only allows one category per request, so each one is fetched separately and merged. If your eBay store ever shows more listings than the site, a listing is probably in a category that isn't on this list: open it on eBay, and the last link in the category trail at the top has the ID in its address.
 
 ## 4. Put it online
 

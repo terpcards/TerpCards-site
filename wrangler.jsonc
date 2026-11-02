@@ -17,7 +17,7 @@
   // `npx wrangler secret put EBAY_CLIENT_ID` and `npx wrangler secret put EBAY_CLIENT_SECRET`.
   "vars": {
     "EBAY_SELLER": "terpcards",
-    "EBAY_CATEGORY_IDS": "212",
+    "EBAY_CATEGORY_IDS": "212,183454,183050",
     "EBAY_MAX_ITEMS": "200",
     "EBAY_MARKETPLACE_ID": "EBAY_US",
 
