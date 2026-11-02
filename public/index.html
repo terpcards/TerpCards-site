@@ -10,8 +10,44 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
-  <!-- Link previews in texts and social apps. Replace yourdomain.com with your domain. -->
+  <!-- The one official address of the site, so search engines don't count www.terp.cards separately. -->
+  <link rel="canonical" href="https://terp.cards/">
+
+  <!-- Tells search engines that this site and these profiles are all TerpCards. If a link changes,
+       update it here as well as in app.js. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://terp.cards/#org",
+        "name": "TerpCards",
+        "url": "https://terp.cards/",
+        "logo": "https://terp.cards/icon-512.png",
+        "description": "Sports cards for sale, and a live Whatnot show every Wednesday at 5:30 PM ET.",
+        "sameAs": [
+          "https://www.ebay.com/str/terpcards",
+          "https://www.whatnot.com/user/terpcards",
+          "https://x.com/TerpCards",
+          "https://www.instagram.com/terpcards/"
+        ]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://terp.cards/#site",
+        "name": "TerpCards",
+        "alternateName": "Terp Cards",
+        "url": "https://terp.cards/",
+        "publisher": { "@id": "https://terp.cards/#org" }
+      }
+    ]
+  }
+  </script>
+
+  <!-- Link previews in texts and social apps. -->
   <meta property="og:type" content="website">
+  <meta property="og:url" content="https://terp.cards/">
   <meta property="og:title" content="TerpCards">
   <meta property="og:description" content="Sports cards for sale, and a live Whatnot show every Wednesday at 5:30 PM ET.">
   <meta property="og:image" content="https://terp.cards/og-image.png">

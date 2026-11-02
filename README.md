@@ -6,6 +6,7 @@ It runs on **Cloudflare Workers' free plan**. The page files are served free wit
 
 ```
 public/index.html       the page
+public/robots.txt, sitemap.xml  for search engines
 public/styles.css       all styling (colors and fonts are at the top)
 public/app.js           page behavior; your links and show schedule are at the top
 src/worker.js           Cloudflare Worker: /api/listings (eBay), /api/whatnot (your shows) and /api/contact (the form)
@@ -132,6 +133,12 @@ Bonus: with Email Routing on, you can also create addresses like `hello@yourdoma
 **Spam protection:** the form has a hidden field that only bots fill in, ignores anything submitted faster than a person could type it, and limits each visitor to 5 messages per 10 minutes. If spam still gets through, Cloudflare Turnstile (a free, mostly invisible "are you human" check) can be added.
 
 **A note on eBay's rules:** eBay doesn't allow steering buyers to off-eBay deals through eBay itself, in listings or eBay messages. The "Make me an offer" note lives on your own site, which is fine, but keep the site and your X/Instagram handles out of your eBay listings and messages.
+
+## Search engines
+
+- `public/robots.txt` lets search engines crawl the whole site and points them to `public/sitemap.xml`.
+- In Google Search Console, go to **Sitemaps**, enter `sitemap.xml` and submit it once. Bing Webmaster Tools has the same option.
+- `public/index.html` has a canonical tag (`https://terp.cards/` is the one official address) and a hidden block of structured data that tells Google this site and your eBay, Whatnot, X and Instagram pages are all TerpCards. If one of those links changes, update it there as well as in `public/app.js`. You can check the block with Google's Rich Results Test (search.google.com/test/rich-results).
 
 ## Changing the look later
 

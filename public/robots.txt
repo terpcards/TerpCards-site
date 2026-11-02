@@ -1,0 +1,5 @@
+# Search engines may crawl the whole site.
+User-agent: *
+Allow: /
+
+Sitemap: https://terp.cards/sitemap.xml
