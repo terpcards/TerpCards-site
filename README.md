@@ -154,6 +154,7 @@ Logo files:
 | `public/favicon.ico`, `favicon-32.png` | the browser tab icon |
 | `public/apple-touch-icon.png`, `icon-512.png` | home-screen icon when someone saves the site to their phone |
 | `public/og-image.png` | the picture shown in link previews (1200 × 630) |
+| `public/img/show-table-*`, `show-crowd-*` | the two card show photos in the footer |
 
 If the logo ever changes, replace these with files of the same names and sizes.
 

@@ -1068,6 +1068,18 @@ a { color: inherit; }
   text-transform: uppercase;
 }
 .foot-note { margin: 0; max-width: 56ch; color: var(--muted-on-dark); font-size: 15px; }
+/* Two card show photos under the logo, the same height side by side */
+.foot-photos { display: flex; gap: 10px; margin-top: 20px; }
+.foot-photos img {
+  display: block;
+  width: auto;
+  height: 150px;
+  border: 1px solid #2B3036;
+  border-radius: 8px;
+}
+@media (max-width: 380px) {
+  .foot-photos img { height: 130px; }
+}
 .foot-links { display: flex; flex-wrap: wrap; gap: 20px; }
 .foot-links a { font-weight: 700; font-size: 15px; text-decoration-color: var(--red); text-underline-offset: 3px; }
 .foot-links a:hover { color: var(--chrome-mid); }
