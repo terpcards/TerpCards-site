@@ -190,12 +190,16 @@ The page only ever receives your shows' IDs, titles and start times, plus the tw
 
 ### Whatnot stats
 
-At the bottom of the box: your lifetime **sales on Whatnot** and **average show rating**.
+At the bottom of the box: your lifetime **sold on Whatnot** count and your **reviews**, like "5.0 ★ · 1.7k reviews".
 
-- **Sales** is the number of orders across every show, as Whatnot's show analytics count them.
-- **Average show rating** is the average of each show's viewer rating. Whatnot's API doesn't include your seller reviews, so this is the closest thing to it.
+- **Sold** is counted from your order list, back to your first show, the same way your Whatnot profile's "sold" number adds up: auctions and Buy It Now that are completed or paid and waiting to ship, plus giveaways that are waiting to ship. Cancelled and failed orders don't count. It's shown the way Whatnot shows it, like **8.7k** (rounded up to the next hundred; under 1,000 the exact number). Hover over it to see the exact count. The rule is `isSale` in `lib/whatnot.js`, and the rounding is `compactCount` in `public/app.js`.
+- **Reviews** are typed in by you, because Whatnot's API doesn't share them. Copy the star rating and review count from your Whatnot profile into `whatnotReviews` in the settings block of `public/app.js` every month or two:
+  ```js
+  whatnotReviews: { rating: 5.0, count: 1700 },   // shows "5.0 ★" and "1.7k reviews"
+  ```
+  These show even before the Whatnot connection is set up. If you set `count` to 0, the box shows the average of your shows' viewer ratings from Whatnot's show stats instead (November 2025 on; Whatnot didn't calculate stats for earlier shows).
 
-How it stays current: every 30 minutes (the `"triggers"` line in `wrangler.jsonc`), the Worker checks for shows that have ended since last time and adds their numbers. A show's numbers are final once Whatnot has calculated them, usually a few hours after it ends, so each show is fetched once and kept in Cloudflare KV storage. The very first count goes through all your past shows over a few runs, and the stats appear once every show is counted.
+How it stays current: every 15 minutes (the `"triggers"` line in `wrangler.jsonc`), the Worker adds new orders and newly finished shows. Orders older than 3 days are counted once and saved in Cloudflare KV storage; newer ones are recounted each time, in case a payment fails or an order is cancelled. The very first count goes through your whole history over a couple of hours, and each stat appears once it's fully counted. During a show, the sales number climbs as you sell.
 
 The stats need a KV namespace, which is free:
 
@@ -206,9 +210,9 @@ The stats need a KV namespace, which is free:
      { "binding": "WHATNOT_STATS", "id": "paste-the-id-here" }
    ],
    ```
-3. Push. The stats show up within about an hour.
+3. Push. The stats show up within a few hours.
 
-`npm run check:whatnot` also prints your lifetime totals, worked out the same way, if you want to check the numbers.
+`npm run check:whatnot` also prints the sales number the site will show, plus a breakdown of your orders, if you want to check it.
 
 ## How the feed works
 

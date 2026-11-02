@@ -7,7 +7,7 @@
 import { EmailMessage } from 'cloudflare:email';
 import { readConfig, fetchSellerData, sellerSearchUrl, feedbackProfileUrl, ConfigError } from '../lib/ebay.js';
 import { readSubmission, buildEmail, toMime, ContactError } from '../lib/contact.js';
-import { whatnotToken, fetchSchedule, refreshStats, summarizeStats } from '../lib/whatnot.js';
+import { whatnotToken, fetchSchedule, refreshStats, summarizeStats, refreshOrderStats, orderSales } from '../lib/whatnot.js';
 
 const FRESH_SECONDS = 900;          // refresh from eBay at most every 15 minutes
 const STALE_LIMIT_MS = 24 * 3600e3; // if eBay is down, keep showing the last good list for up to a day
@@ -226,41 +226,50 @@ async function whatnot(request, env, ctx) {
 
 // ---------- Lifetime Whatnot stats ----------
 // Saved in Cloudflare KV (the WHATNOT_STATS binding in wrangler.jsonc) and brought up to
-// date by the scheduled run. The first time, it takes a few runs to go through every show.
+// date by the scheduled run:
+//   sales  - counted from your orders (back to your first show), see lib/whatnot.js
+//   rating - the average of each show's viewer rating, from Whatnot's show stats
+// The first count takes a few runs; each stat appears once it's fully counted.
 
-const STATS_KEY = 'whatnot-stats';
+const RATING_KEY = 'whatnot-stats';
+const SALES_KEY = 'whatnot-orders';
 let statsKickedAt = 0;
 
 async function updateWhatnotStats(env) {
   const token = whatnotToken(env);
-  if (!token || !env.WHATNOT_STATS) return null;
-  const saved = await env.WHATNOT_STATS.get(STATS_KEY, 'json');
-  const next = await refreshStats(token, saved, { maxRequests: 35 });
-  await env.WHATNOT_STATS.put(STATS_KEY, JSON.stringify(next));
-  const t = summarizeStats(next);
-  console.log(`[whatnot stats] ${Object.keys(next.shows).length}/${next.endedShows} shows, ${t.sales} sales, complete: ${next.complete}`);
-  return next;
+  if (!token || !env.WHATNOT_STATS) return;
+  const kv = env.WHATNOT_STATS;
+  // Kept under 50 calls in total, the per-run limit on Cloudflare's free plan.
+  const [savedSales, savedRating] = await Promise.all([kv.get(SALES_KEY, 'json'), kv.get(RATING_KEY, 'json')]);
+  const sales = await refreshOrderStats(token, savedSales, { maxRequests: 24 });
+  await kv.put(SALES_KEY, JSON.stringify(sales));
+  const rating = await refreshStats(token, savedRating, { maxRequests: 12 });
+  await kv.put(RATING_KEY, JSON.stringify(rating));
+  console.log(`[whatnot stats] sales ${orderSales(sales) ?? 'still counting'}, rating ${summarizeStats(rating).rating ?? '-'} (${Object.keys(rating.shows).length}/${rating.endedShows} shows checked)`);
 }
 
-// What the page shows: lifetime sales and average show rating. Nothing until every show
-// has been counted, so a half-finished first run never shows a low number.
+// What the page shows. A stat stays hidden until it's fully counted, so a half-finished
+// first run never shows a low number.
 async function readWhatnotStats(env, ctx) {
   if (!env.WHATNOT_STATS) return null;
-  let saved = null;
+  let savedSales = null;
+  let savedRating = null;
   try {
-    saved = await env.WHATNOT_STATS.get(STATS_KEY, 'json');
+    [savedSales, savedRating] = await Promise.all([env.WHATNOT_STATS.get(SALES_KEY, 'json'), env.WHATNOT_STATS.get(RATING_KEY, 'json')]);
   } catch (err) {
     console.error('[whatnot stats] read failed', err);
     return null;
   }
   // Not finished yet (or never run): nudge it along now instead of waiting for the next scheduled run.
-  if ((!saved || !saved.complete) && Date.now() - statsKickedAt > 10 * 60e3) {
+  if ((!savedSales?.complete || !savedRating?.complete) && Date.now() - statsKickedAt > 10 * 60e3) {
     statsKickedAt = Date.now();
     ctx.waitUntil(updateWhatnotStats(env).catch((err) => console.error('[whatnot stats]', err)));
   }
-  const t = summarizeStats(saved);
-  if (!t.complete || t.sales <= 0) return null;
-  return { sales: t.sales, rating: t.rating == null ? null : Math.round(t.rating * 100) / 100, shows: t.shows };
+  const sales = orderSales(savedSales);
+  const r = summarizeStats(savedRating);
+  const rating = r.complete && r.rating != null ? Math.round(r.rating * 100) / 100 : null;
+  if (!(sales > 0) && rating == null) return null;
+  return { sales: sales > 0 ? sales : null, rating };
 }
 
 // Browsers always come back to the Worker (no-cache); the Worker decides how fresh to be.

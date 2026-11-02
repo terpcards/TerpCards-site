@@ -17,6 +17,11 @@ const SITE = {
   // Link to one show on Whatnot; {id} is replaced with the show's ID.
   whatnotShowUrl: 'https://www.whatnot.com/live/{id}',
 
+  // Your Whatnot reviews, copied from your Whatnot profile (Whatnot's API doesn't share them).
+  // Update these now and then. count is shown like Whatnot shows it: 1700 -> "1.7k reviews".
+  // Set count to 0 to show the average show rating from Whatnot's show stats instead.
+  whatnotReviews: { rating: 5.0, count: 1700 },
+
   apiUrl: '/api/listings',
   whatnotApiUrl: '/api/whatnot',
   contactUrl: '/api/contact',
@@ -67,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireLinks();
   startShowClock();
   bindCalendar();
+  showWhatnotStats(null);
   loadWhatnot();
   showSkeletons(8);
   bindControls();
@@ -317,19 +323,41 @@ async function loadWhatnot() {
   }, 60000);
 }
 
-// "9,412 sales on Whatnot" and "5.0★ average show rating" at the bottom of the box.
+// 8,636 -> "8.7k", the way Whatnot shows counts: rounded up to the next tenth of a thousand
+// (or million). Under 1,000 the exact number is shown. Same as compactCount in lib/whatnot.js.
+function compactCount(n) {
+  n = Math.max(0, Math.floor(Number(n) || 0));
+  if (n < 1000) return String(n);
+  const tenths = (unit) => Math.ceil(n / (unit / 10)) / 10;
+  const k = tenths(1e3);
+  if (k < 1000) return `${String(k).replace(/\.0$/, '')}k`;
+  return `${String(tenths(1e6)).replace(/\.0$/, '')}M`;
+}
+
+// "8.7k sold on Whatnot" and "5.0★ 1.7k reviews" at the bottom of the box. Reviews come
+// from SITE.whatnotReviews; without them, the average show rating from Whatnot is shown.
 function showWhatnotStats(stats) {
   const box = $('[data-show-stats]');
-  if (!stats || !(stats.sales > 0)) {
+  const reviews = SITE.whatnotReviews;
+  const hasReviews = Boolean(reviews) && reviews.count > 0 && typeof reviews.rating === 'number';
+  const hasSales = Boolean(stats) && stats.sales > 0;
+  const rating = hasReviews ? reviews.rating : stats && typeof stats.rating === 'number' ? stats.rating : null;
+  const hasRating = rating != null;
+  if (!hasSales && !hasRating) {
     box.hidden = true;
     return;
   }
-  $('[data-stat-sales]').textContent = stats.sales.toLocaleString('en-US');
-  const hasRating = typeof stats.rating === 'number';
+  $('[data-stat-sales-wrap]').hidden = !hasSales;
+  if (hasSales) {
+    const sales = $('[data-stat-sales]');
+    sales.textContent = compactCount(stats.sales);
+    sales.title = `${stats.sales.toLocaleString('en-US')} sold`;
+  }
   $('[data-stat-rating-wrap]').hidden = !hasRating;
   if (hasRating) {
+    $('[data-stat-rating-label]').textContent = hasReviews ? `${compactCount(reviews.count)} reviews` : 'Average show rating';
     $('[data-stat-rating]').replaceChildren(
-      stats.rating.toFixed(1),
+      rating.toFixed(1),
       el('span', { className: 'stat-star', 'aria-hidden': 'true' }, '★'),
       el('span', { className: 'sr-only' }, ' out of 5')
     );

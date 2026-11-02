@@ -4,7 +4,7 @@
 // whatnot-check.json (git-ignored, since it includes sales numbers). It never saves the token.
 
 import { writeFileSync } from 'node:fs';
-import { whatnotToken, currentUser, listShows, showAnalytics, refreshStats, summarizeStats } from '../lib/whatnot.js';
+import { whatnotToken, whatnotGet, currentUser, listShows, showAnalytics, refreshStats, summarizeStats, isSale, compactCount } from '../lib/whatnot.js';
 
 const token = whatnotToken(process.env);
 if (!token) {
@@ -74,6 +74,7 @@ console.log('\nAcross those shows:', out.totals);
 // Lifetime totals, worked out the same way the site does (here in one go, every show).
 console.log('\nWorking out lifetime totals across every show (this takes a moment)...');
 const lifetime = await attempt('lifetime stats', () => refreshStats(token, null, { maxRequests: 1000 }));
+// (The site's sales number comes from orders, counted below; this part is where the rating comes from.)
 if (lifetime) {
   const t = summarizeStats(lifetime);
   out.lifetime = { ...t, endedShows: lifetime.endedShows };
@@ -81,6 +82,46 @@ if (lifetime) {
   console.log(`  Average show rating:    ${t.rating == null ? 'none yet' : t.rating.toFixed(2)} across ${t.ratedShows} rated shows`);
   console.log(`  Shows with sales:       ${t.shows}`);
   console.log(`  Every show counted:     ${t.complete ? 'yes' : 'no'}`);
+  // Which shows have numbers, by month (to see how far back Whatnot's show analytics go).
+  out.lifetimeShows = Object.entries(lifetime.shows)
+    .map(([id, v]) => ({ id, start: v.start, status: v.status, orders: v.orders, rating: v.rating }))
+    .sort((a, b) => String(a.start).localeCompare(String(b.start)));
+}
+
+// Every order, counted by status and how it sold (no buyer details are read or saved).
+console.log('\nCounting every order (about one request per 50 orders, so this can take a minute)...');
+const tally = { pages: 0, total: 0, sales: 0, byStatus: {}, byType: {}, byTypeAndStatus: {}, inShows: 0, outsideShows: 0, byMonth: {}, oldest: null, newest: null };
+let cursor = null;
+const counted = await attempt('orders', async () => {
+  do {
+    const res = await whatnotGet(token, '/orders', { limit: 50, cursor });
+    tally.pages++;
+    for (const o of res.data || []) {
+      tally.total++;
+      tally.byStatus[o.status] = (tally.byStatus[o.status] || 0) + 1;
+      const type = o.transaction_type || 'unknown';
+      tally.byType[type] = (tally.byType[type] || 0) + 1;
+      const key = `${type} / ${o.status}`;
+      tally.byTypeAndStatus[key] = (tally.byTypeAndStatus[key] || 0) + 1;
+      if (isSale(o)) tally.sales++;
+      if (o.show_id) tally.inShows++; else tally.outsideShows++;
+      const month = (o.created_at || 'unknown').slice(0, 7);
+      tally.byMonth[month] = (tally.byMonth[month] || 0) + 1;
+      if (o.created_at && (!tally.oldest || o.created_at < tally.oldest)) tally.oldest = o.created_at;
+      if (o.created_at && (!tally.newest || o.created_at > tally.newest)) tally.newest = o.created_at;
+    }
+    cursor = res.next_cursor;
+    if (tally.pages % 20 === 0) process.stdout.write(`  ...${tally.total} so far\n`);
+  } while (cursor && tally.pages < 1000);
+  return true;
+});
+if (counted) {
+  out.orders = tally;
+  const ok = tally.total - (tally.byStatus.cancelled || 0) - (tally.byStatus.failed || 0);
+  console.log(`  Orders: ${tally.total.toLocaleString('en-US')} in all, ${ok.toLocaleString('en-US')} not cancelled or failed`);
+  console.log(`  Sales the site shows: ${tally.sales.toLocaleString('en-US')} (shown as ${compactCount(tally.sales)})`);
+  console.log('  By type and status:', tally.byTypeAndStatus);
+  console.log(`  In shows: ${tally.inShows}, elsewhere: ${tally.outsideShows}, from ${String(tally.oldest).slice(0, 10)} to ${String(tally.newest).slice(0, 10)}`);
 }
 
 writeFileSync(new URL('../whatnot-check.json', import.meta.url), JSON.stringify(out, null, 2));

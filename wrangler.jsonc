@@ -33,8 +33,13 @@
      { "name": "CONTACT_EMAIL", "destination_address": "terpcards@gmail.com" }
    ],
 
-  // Every 30 minutes: brings the lifetime Whatnot stats up to date (README: "Whatnot stats").
-  "triggers": { "crons": ["*/30 * * * *"] },
+  // Every 15 minutes: brings the lifetime Whatnot stats up to date (README: "Whatnot stats").
+  "triggers": { "crons": ["*/15 * * * *"] },
+
+  // Where the lifetime Whatnot stats are saved (Cloudflare KV namespace "terpcards-whatnot-stats").
+  "kv_namespaces": [
+    { "binding": "WHATNOT_STATS", "id": "69b35a6fcb374f2fbf64fcc4fb8710a2" }
+  ],
 
   // Keeps recent logs in the dashboard so you can see errors from the eBay feed.
   "observability": {
