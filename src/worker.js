@@ -106,30 +106,29 @@ async function listings(request, env, ctx) {
 
   const now = Date.now();
 
-  // 1. This server's own copy, if fresh.
-  if (memo && now - memo.savedAt < FRESH_MS) {
-    return ok(memo.body, request, memo.savedAt, now, 'memory');
-  }
-
-  // 2. The copy shared by Cloudflare's servers in this location, if fresh.
+  // 1. The newest saved copy: this server's own, or the one shared by Cloudflare's servers in
+  //    this location, whichever was fetched from eBay more recently. Checking both every time
+  //    means a reload can't land on a server with an older copy and lose your newest listings.
   const cache = typeof caches !== 'undefined' ? caches.default : null;
   const cacheKey = new Request(new URL('/api/listings', request.url).toString(), { method: 'GET' });
-  let shared = null; // { body, savedAt }
+  let shared = null; // { body, savedAt }, only read when it's newer than this server's copy
   if (cache) {
     try {
       const hit = await cache.match(cacheKey);
       const savedAt = hit ? Number(hit.headers.get(SAVED_AT)) : 0;
-      if (hit && savedAt > 0) shared = { body: await hit.text(), savedAt };
+      if (hit && savedAt > 0 && (!memo || savedAt > memo.savedAt)) shared = { body: await hit.text(), savedAt };
     } catch (err) {
       console.error('[listings] cache read failed', err);
     }
   }
-  if (shared && now - shared.savedAt < FRESH_MS) {
-    if (!memo || shared.savedAt > memo.savedAt) memo = shared;
-    return ok(shared.body, request, shared.savedAt, now, 'shared');
+  if (shared) memo = shared;
+  if (memo && now - memo.savedAt < FRESH_MS) {
+    return ok(memo.body, request, memo.savedAt, now, shared ? 'shared' : 'memory');
   }
 
-  // 3. Fetch from eBay.
+  // 2. Nothing fresh enough: ask eBay (below).
+
+  // Fetch from eBay.
   try {
     const cfg = readConfig(env);
     const { items, feedback } = await fetchSellerData(cfg);
@@ -152,7 +151,7 @@ async function listings(request, env, ctx) {
     return ok(body, request, now, now, 'ebay');
   } catch (err) {
     console.error('[listings]', err);
-    // 4. eBay failed: use the newest copy we have, if it's less than a day old.
+    // eBay failed: use the newest copy we have, if it's less than a day old.
     const backup = [memo, shared].filter(Boolean).sort((a, b) => b.savedAt - a.savedAt)[0];
     if (backup && now - backup.savedAt < STALE_LIMIT_MS) {
       return ok(backup.body, request, backup.savedAt, now, 'backup', { 'X-Listings-Stale': '1' });
