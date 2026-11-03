@@ -102,6 +102,7 @@ async function contact(request, env) {
 
 const FRESH_MS = FRESH_SECONDS * 1000;
 const SAVED_AT = 'X-Listings-Saved-At';
+const LISTINGS_VERSION = 2; // 2: calculated shipping left out of direct lookups too
 
 async function listings(request, env, ctx) {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -146,6 +147,7 @@ async function listings(request, env, ctx) {
     if (!account) for (const i of items) delete i.popular;
     const feedback = fetched.feedback;
     const body = JSON.stringify({
+      version: LISTINGS_VERSION,
       seller: cfg.seller,
       sellerUrl: sellerSearchUrl(cfg.seller),
       feedback: feedback ? { ...feedback, url: feedbackProfileUrl(cfg.seller) } : null,
@@ -423,7 +425,9 @@ async function mergeWithAccount(cfg, searchItems, account, previous, now) {
 
   let before = [];
   try {
-    before = previous ? JSON.parse(previous.body).items || [] : [];
+    // Copies saved before the shipping fix may carry estimated shipping; those cards are looked up again.
+    const body = previous ? JSON.parse(previous.body) : null;
+    before = body && body.version >= LISTINGS_VERSION ? body.items || [] : [];
   } catch {}
   const earlier = new Map(before.map((i) => [legacyId(i.id), i]));
   const added = [];
