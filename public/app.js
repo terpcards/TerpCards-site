@@ -20,7 +20,7 @@ const SITE = {
   // Your Whatnot reviews, copied from your Whatnot profile (Whatnot's API doesn't share them).
   // Update these now and then. count is shown like Whatnot shows it: 1700 -> "1.7k reviews".
   // Set count to 0 to show the average show rating from Whatnot's show stats instead.
-  whatnotReviews: { rating: 5.0, count: 1700 },
+  whatnotReviews: { rating: 5.0, count: 1800 },
 
   apiUrl: '/api/listings',
   whatnotApiUrl: '/api/whatnot',
