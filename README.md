@@ -172,6 +172,33 @@ The grading companies it knows are in `GRADERS` in `public/app.js` (PSA, BGS, BV
 
 Next to the "On eBay now" heading, the site shows your eBay feedback, like "99.8% positive feedback (1,234)", linked to your feedback page. It comes from eBay along with your listings, so it stays current on its own. It only shows while your feedback is at least `feedbackMinPercent` (98 by default) in the settings block of `public/app.js`; set that to 101 to hide it.
 
+## Connect your eBay account (Most popular sort)
+
+Signing in to eBay once, through the site, lets it read your own account the way Seller Hub does. That gives the site two things eBay's public search can't:
+
+- **A "Most popular" sort**, ordered by how many people are watching each card on eBay. The site only ever gets each card's place in that order (`popular: 1` is the most watched). The watcher counts themselves stay in the Worker and never reach the page.
+- **An exact listing count.** Your account's own list of active listings decides what's on the site, so cards don't drop off while eBay's search is behind, and sold cards come off at the next refresh.
+
+The site only reads. The Worker makes two eBay calls with the sign-in: `GetUser`, to check it's your account, and `GetMyeBaySelling`, for your active listings. Nothing in the code lists, edits, ends or buys anything. The sign-in itself is saved in Cloudflare KV storage, not in the code or on the page.
+
+**One-time setup:**
+
+1. On [developer.ebay.com](https://developer.ebay.com), go to **Application Keys**. Next to your **Production** keyset, click **User Tokens**.
+2. Under **Get a Token from eBay via Your Application**, click **Add eBay Redirect URL** and fill in:
+   - **Display title:** TerpCards
+   - **Your privacy policy URL:** `https://terp.cards/`
+   - **Your auth accepted URL:** `https://terp.cards/api/ebay/callback`
+   - **Your auth declined URL:** `https://terp.cards/api/ebay/callback`
+   - Choose **OAuth** (not Auth'n'Auth), then **Save**.
+3. Copy the **RuName** eBay shows for it. It looks like `Jason_Burtnick-JasonBur-TerpCa-abcdefg`. It isn't secret. Put it in `wrangler.jsonc`:
+   ```jsonc
+   "EBAY_RUNAME": "paste-the-runame-here",
+   ```
+4. Push. Once the Worker is deployed, open **https://terp.cards/api/ebay/connect**, sign in as **terpcards**, and click **Agree**. You'll land on an "eBay connected" page. It only accepts the `EBAY_SELLER` account, so signing in as anyone else is refused.
+5. Within 15 minutes, **Most popular** appears in the sort menu.
+
+The sign-in is saved in the same Cloudflare KV storage as the Whatnot stats, so the KV setup under "Whatnot stats" is needed for this too. It lasts about 18 months. A month before it runs out, the site emails `CONTACT_TO` a reminder, and it emails again if it ever stops working (for example after you change your eBay password). In both cases, open the connect link again. Until you do, the site keeps working from eBay's search the old way, without the Most popular sort. To disconnect, remove the app under **eBay → Account settings → Third-party app access**.
+
 ## The Whatnot box
 
 With your Whatnot token connected (below), the box follows your real Whatnot schedule:
@@ -229,7 +256,8 @@ The stats need a KV namespace, which is free:
 - It pages through up to `EBAY_MAX_ITEMS` (500 in `wrangler.jsonc`), drops duplicates, upgrades photo URLs to a sharper size, and returns newest first.
 - The Worker asks eBay at most once every 15 minutes (`FRESH_SECONDS` in `src/worker.js`). Each saved copy carries the time it was fetched, and that time decides whether it's still fresh. Copies are shared between Cloudflare's servers in the same location, so one fetch serves everyone nearby, and every request uses the newest copy available, so a reload never goes back to an older list.
 - Browsers don't cache the feed; they always ask the Worker, which answers from its saved copy.
-- eBay's search sometimes leaves out listings that are still for sale, especially while you're listing or editing. When a card the site already had goes missing from the search, the Worker looks that listing up directly: it stays on the site while it's still for sale and comes off once eBay says it sold or ended. If eBay won't answer either way, a card is kept for at most 6 hours. Brand-new listings appear once eBay's search has included them at least once.
+- With your eBay account connected (above), each refresh also reads your active listings from the account itself (`lib/ebay-account.js`). Cards eBay's search left out are looked up directly and added, and cards that are no longer active come off, so the site matches your account. If that read fails, the refresh falls back to the search alone, as below.
+- Without the account connected, eBay's search sometimes leaves out listings that are still for sale, especially while you're listing or editing. When a card the site already had goes missing from the search, the Worker looks that listing up directly: it stays on the site while it's still for sale and comes off once eBay says it sold or ended. If eBay won't answer either way, a card is kept for at most 6 hours. Brand-new listings appear once eBay's search has included them at least once.
 - If eBay has an outage, the Worker serves the newest copy it has, up to a day old.
 - Two response headers tell you what happened: `X-Listings-Source` (`memory`, `shared`, `ebay` or `backup`) and `X-Listings-Age` (seconds since that copy was fetched). Check them with `curl -sI https://terp.cards/api/listings`.
 - Errors return a generic message to the browser. The details show up in the Worker's **Logs** tab in the dashboard.

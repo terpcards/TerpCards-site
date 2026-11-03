@@ -629,6 +629,7 @@ async function loadListings() {
   }
 
   for (const item of state.items) item.graded = isGraded(item.title);
+  showPopularSort();
   wireLinks();
   showFeedback();
   $('[data-controls]').hidden = state.items.length === 0;
@@ -741,7 +742,25 @@ function matchesQuery(item) {
   return words.every((w) => hay.includes(w));
 }
 
+// "Most popular" orders cards by how many people watch them on eBay. The site only gets each
+// card's position (popular: 1 = most watched), never the watcher counts, and the option only
+// appears once your eBay account is connected (README: "Connect your eBay account").
+function showPopularSort() {
+  const select = $('[data-sort]');
+  const has = state.items.some((i) => Number.isFinite(i.popular));
+  let option = select.querySelector('option[value="popular"]');
+  if (has && !option) {
+    option = el('option', { value: 'popular' }, 'Most popular');
+    select.insertBefore(option, select.options[1] || null);
+  } else if (!has && option) {
+    if (state.sort === 'popular') state.sort = 'new';
+    option.remove();
+    select.value = state.sort;
+  }
+}
+
 const sorters = {
+  popular: (a, b) => (a.popular ?? Infinity) - (b.popular ?? Infinity) || (Date.parse(b.listedAt) || 0) - (Date.parse(a.listedAt) || 0),
   new: (a, b) => (Date.parse(b.listedAt) || 0) - (Date.parse(a.listedAt) || 0),
   low: (a, b) => (shownPrice(a)?.value ?? Infinity) - (shownPrice(b)?.value ?? Infinity),
   high: (a, b) => (shownPrice(b)?.value ?? -Infinity) - (shownPrice(a)?.value ?? -Infinity),

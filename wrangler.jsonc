@@ -20,6 +20,8 @@
     "EBAY_CATEGORY_IDS": "212,183454,183050",
     "EBAY_MAX_ITEMS": "500",
     "EBAY_MARKETPLACE_ID": "EBAY_US",
+    // The "RuName" eBay gives you for the one-time sign-in (README: "Connect your eBay account").
+    "EBAY_RUNAME": "Jason_Burtnick-JasonBur-MyInve-gorykzu",
 
     // Contact form (README step 6). Messages go to CONTACT_TO. CONTACT_FROM must be an
     // address on your own domain, e.g. "contact@yourdomain.com"; fill it in at step 6.

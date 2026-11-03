@@ -1,11 +1,13 @@
 // Cloudflare Worker for the site.
 //   /api/listings  ->  your active eBay listings as JSON (runs here, keys stay secret)
+//   /api/ebay/connect, /api/ebay/callback -> the one-time eBay sign-in (see README)
 //   /api/whatnot   ->  your next Whatnot shows, and whether you're live right now
 //   /api/contact   ->  the contact form; emails the message to you
 //   everything else ->  the static page in /public (served free, the Worker isn't involved)
 
 import { EmailMessage } from 'cloudflare:email';
-import { readConfig, fetchSellerData, checkListings, sellerSearchUrl, feedbackProfileUrl, ConfigError } from '../lib/ebay.js';
+import { readConfig, fetchSellerData, checkListings, fetchItemsByLegacyId, sellerSearchUrl, feedbackProfileUrl, ConfigError } from '../lib/ebay.js';
+import { signInUrl, finishSignIn, accountUsername, activeListings, withAccount, AccountError } from '../lib/ebay-account.js';
 import { readSubmission, buildEmail, toMime, ContactError } from '../lib/contact.js';
 import { whatnotToken, fetchSchedule, refreshStats, summarizeStats, refreshOrderStats, orderSales } from '../lib/whatnot.js';
 
@@ -23,6 +25,8 @@ export default {
     if (url.pathname === '/api/listings') return listings(request, env, ctx);
     if (url.pathname === '/api/whatnot') return whatnot(request, env, ctx);
     if (url.pathname === '/api/contact') return contact(request, env);
+    if (url.pathname === '/api/ebay/connect') return ebayConnect(request, env);
+    if (url.pathname === '/api/ebay/callback') return ebayCallback(request, env);
     if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
 
     return env.ASSETS.fetch(request);
@@ -132,7 +136,14 @@ async function listings(request, env, ctx) {
   try {
     const cfg = readConfig(env);
     const fetched = await fetchSellerData(cfg);
-    const { items, held } = await holdOnToMissing(cfg, fetched.items, memo, now);
+    // With your eBay account connected, your account's own list decides what's for sale;
+    // otherwise, cards eBay's search drops are checked one by one.
+    const account = await readAccountListings(env, cfg, now);
+    const { items, held } = account
+      ? await mergeWithAccount(cfg, fetched.items, account, memo, now)
+      : await holdOnToMissing(cfg, fetched.items, memo, now);
+    // Popularity comes only from the account; cards carried over from an earlier copy drop it.
+    if (!account) for (const i of items) delete i.popular;
     const feedback = fetched.feedback;
     const body = JSON.stringify({
       seller: cfg.seller,
@@ -308,6 +319,143 @@ async function holdOnToMissing(cfg, items, previous, now) {
   if (kept.length) console.log(`[listings] kept ${kept.length} card(s) eBay's search left out, still for sale`);
   const newest = (a, b) => (Date.parse(b.listedAt || 0) || 0) - (Date.parse(a.listedAt || 0) || 0);
   return { items: [...items, ...kept].sort(newest), held };
+}
+
+// ---------- Your eBay account (optional, one-time sign-in) ----------
+// Saved in the same Cloudflare KV storage as the Whatnot stats (the WHATNOT_STATS binding).
+
+const ACCOUNT_KEY = 'ebay-account';
+const STATE_PREFIX = 'ebay-signin-state:';
+const RENEW_WARNING_MS = 30 * 864e5; // email you a month before the sign-in runs out
+
+function page(title, message, status = 200) {
+  const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  return new Response(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${esc(title)}</title>` +
+      `<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#121417;color:#F2F4F6;font:17px/1.5 system-ui,sans-serif}main{max-width:34rem;padding:2rem}h1{font-size:1.6rem;margin:0 0 .5rem}a{color:#fff}</style></head>` +
+      `<body><main><h1>${esc(title)}</h1><p>${esc(message)}</p><p><a href="/">Back to the site</a></p></main></body></html>`,
+    { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } }
+  );
+}
+
+// Step 1: send you to eBay to approve. Anyone can open this link, but the sign-in is only saved
+// if it's the eBay account in EBAY_SELLER (checked in step 2).
+async function ebayConnect(request, env) {
+  let cfg;
+  try {
+    cfg = readConfig(env);
+  } catch {
+    return page('eBay keys missing', 'Add your eBay keys in Cloudflare first (README step 4).', 500);
+  }
+  const runame = (env.EBAY_RUNAME || '').trim();
+  if (!runame) return page('Almost there', 'Add your eBay RuName to EBAY_RUNAME in wrangler.jsonc, push, then open this link again.', 500);
+  if (!env.WHATNOT_STATS) return page('Storage missing', 'The site needs its Cloudflare KV storage (the WHATNOT_STATS binding in wrangler.jsonc).', 500);
+  const state = crypto.randomUUID();
+  await env.WHATNOT_STATS.put(STATE_PREFIX + state, '1', { expirationTtl: 600 });
+  return Response.redirect(signInUrl(cfg, runame, state), 302);
+}
+
+// Step 2: eBay sends you back here after you approve (or decline).
+async function ebayCallback(request, env) {
+  const url = new URL(request.url);
+  const code = url.searchParams.get('code');
+  const state = url.searchParams.get('state') || '';
+  if (!code) return page('Not connected', 'eBay sign-in was cancelled, so nothing changed. You can try again any time.');
+  if (!env.WHATNOT_STATS || !(await env.WHATNOT_STATS.get(STATE_PREFIX + state))) {
+    return page('Link expired', 'That sign-in link expired or was already used. Open /api/ebay/connect again.', 400);
+  }
+  await env.WHATNOT_STATS.delete(STATE_PREFIX + state);
+  try {
+    const cfg = readConfig(env);
+    const account = await finishSignIn(cfg, (env.EBAY_RUNAME || '').trim(), code);
+    const user = await accountUsername(account.accessToken);
+    if (!user || user.toLowerCase() !== cfg.seller.toLowerCase()) {
+      return page('Wrong eBay account', `You signed in as ${user || 'an unknown account'}, but this site is set up for ${cfg.seller}. Nothing was saved.`, 403);
+    }
+    await env.WHATNOT_STATS.put(ACCOUNT_KEY, JSON.stringify({ ...account, user }));
+    memo = null; // use the account on the next listings refresh
+    return page('eBay connected', `The site now reads your listings straight from your ${user} account. It shows up within 15 minutes, and the "Most popular" sort appears once it does.`);
+  } catch (err) {
+    console.error('[ebay sign-in]', err);
+    return page('Something went wrong', "eBay didn't finish the sign-in. Try /api/ebay/connect again in a minute.", 502);
+  }
+}
+
+// Your active listings and their watcher counts, or null if the account isn't connected or eBay didn't answer.
+async function readAccountListings(env, cfg, now) {
+  if (!env.WHATNOT_STATS) return null;
+  let saved;
+  try {
+    saved = await env.WHATNOT_STATS.get(ACCOUNT_KEY, 'json');
+  } catch {
+    return null;
+  }
+  if (!saved || !saved.refreshToken || saved.broken) return null;
+  try {
+    const { result, account, changed } = await withAccount(cfg, saved, (token) => activeListings(token), { now });
+    if (changed) await env.WHATNOT_STATS.put(ACCOUNT_KEY, JSON.stringify(account));
+    if (account.refreshExpiresAt && account.refreshExpiresAt - now < RENEW_WARNING_MS) {
+      await alertOnce(env, 'ebay-renew', 'TerpCards site: renew the eBay sign-in',
+        `The site's eBay sign-in runs out on ${new Date(account.refreshExpiresAt).toDateString()}. Open https://terp.cards/api/ebay/connect and sign in again to keep the "Most popular" sort and the account listing check working.`);
+    }
+    return result.complete ? result : null;
+  } catch (err) {
+    console.error('[ebay account]', err);
+    if (err instanceof AccountError && err.needsSignIn) {
+      await env.WHATNOT_STATS.put(ACCOUNT_KEY, JSON.stringify({ ...saved, broken: err.message }));
+      await alertOnce(env, 'ebay-signin', 'TerpCards site: sign in to eBay again',
+        `The site's eBay sign-in stopped working (${err.message}). Open https://terp.cards/api/ebay/connect and sign in again. Until then, listings still show, without the "Most popular" sort.`);
+    }
+    return null;
+  }
+}
+
+// Search results, corrected by your account's own list:
+//   - anything not in your account's active list is dropped (it sold or ended)
+//   - anything in your account but missing from search is added, from the last saved copy or
+//     looked up by its listing number
+//   - each card gets a "popular" position (1 = most watched); the watcher counts themselves stay here
+async function mergeWithAccount(cfg, searchItems, account, previous, now) {
+  const legacyId = (id) => String(id).split('|')[1] || String(id);
+  const watch = account.watch;
+  const fromSearch = searchItems.filter((i) => watch.has(legacyId(i.id)));
+  const have = new Set(fromSearch.map((i) => legacyId(i.id)));
+
+  let before = [];
+  try {
+    before = previous ? JSON.parse(previous.body).items || [] : [];
+  } catch {}
+  const earlier = new Map(before.map((i) => [legacyId(i.id), i]));
+  const added = [];
+  const lookup = [];
+  for (const id of watch.keys()) {
+    if (have.has(id)) continue;
+    const prev = earlier.get(id);
+    if (prev && !(prev.isAuction && prev.endsAt && Date.parse(prev.endsAt) <= now)) added.push(prev);
+    else lookup.push(id);
+  }
+  added.push(...(await fetchItemsByLegacyId(cfg, lookup.slice(0, MAX_LOOKUPS), { now })));
+
+  const newest = (a, b) => (Date.parse(b.listedAt || 0) || 0) - (Date.parse(a.listedAt || 0) || 0);
+  const items = [...fromSearch, ...added].map((i) => ({ ...i })).sort(newest);
+  const watchers = (i) => watch.get(legacyId(i.id)) || 0;
+  [...items].sort((a, b) => watchers(b) - watchers(a) || newest(a, b)).forEach((i, n) => { i.popular = n + 1; });
+  if (added.length) console.log(`[listings] added ${added.length} active listing(s) eBay's search left out`);
+  return { items, held: {} };
+}
+
+// Emails you about something that needs your attention, at most once a week per topic.
+async function alertOnce(env, topic, subject, text) {
+  try {
+    if (!env.WHATNOT_STATS || !env.CONTACT_EMAIL || !env.CONTACT_FROM || !env.CONTACT_TO) return;
+    const key = `alert:${topic}`;
+    if (await env.WHATNOT_STATS.get(key)) return;
+    await env.WHATNOT_STATS.put(key, new Date().toISOString(), { expirationTtl: 7 * 86400 });
+    const raw = toMime({ from: env.CONTACT_FROM, fromName: 'TerpCards site', to: env.CONTACT_TO, subject, text });
+    await env.CONTACT_EMAIL.send(new EmailMessage(env.CONTACT_FROM, env.CONTACT_TO, raw));
+  } catch (err) {
+    console.error('[alert]', err);
+  }
 }
 
 // Browsers always come back to the Worker (no-cache); the Worker decides how fresh to be.
