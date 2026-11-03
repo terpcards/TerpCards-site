@@ -226,9 +226,10 @@ The stats need a KV namespace, which is free:
 ## How the feed works
 
 - `lib/ebay.js` gets an OAuth app token (cached for about two hours), then calls `item_summary/search` filtered to your seller name, for both Buy It Now and auction listings. Auctions with bids are left out by eBay unless you ask for them, so the filter asks.
-- It pages through up to `EBAY_MAX_ITEMS` (default 200), drops duplicates, upgrades photo URLs to a sharper size, and returns newest first.
+- It pages through up to `EBAY_MAX_ITEMS` (500 in `wrangler.jsonc`), drops duplicates, upgrades photo URLs to a sharper size, and returns newest first.
 - The Worker asks eBay at most once every 15 minutes (`FRESH_SECONDS` in `src/worker.js`). Each saved copy carries the time it was fetched, and that time decides whether it's still fresh. Copies are shared between Cloudflare's servers in the same location, so one fetch serves everyone nearby, and every request uses the newest copy available, so a reload never goes back to an older list.
 - Browsers don't cache the feed; they always ask the Worker, which answers from its saved copy.
+- eBay's search sometimes leaves out listings that are still for sale, especially while you're listing or editing. When a card the site already had goes missing from the search, the Worker looks that listing up directly: it stays on the site while it's still for sale and comes off once eBay says it sold or ended. If eBay won't answer either way, a card is kept for at most 6 hours. Brand-new listings appear once eBay's search has included them at least once.
 - If eBay has an outage, the Worker serves the newest copy it has, up to a day old.
 - Two response headers tell you what happened: `X-Listings-Source` (`memory`, `shared`, `ebay` or `backup`) and `X-Listings-Age` (seconds since that copy was fetched). Check them with `curl -sI https://terp.cards/api/listings`.
 - Errors return a generic message to the browser. The details show up in the Worker's **Logs** tab in the dashboard.

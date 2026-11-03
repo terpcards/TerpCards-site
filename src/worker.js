@@ -5,7 +5,7 @@
 //   everything else ->  the static page in /public (served free, the Worker isn't involved)
 
 import { EmailMessage } from 'cloudflare:email';
-import { readConfig, fetchSellerData, sellerSearchUrl, feedbackProfileUrl, ConfigError } from '../lib/ebay.js';
+import { readConfig, fetchSellerData, checkListings, sellerSearchUrl, feedbackProfileUrl, ConfigError } from '../lib/ebay.js';
 import { readSubmission, buildEmail, toMime, ContactError } from '../lib/contact.js';
 import { whatnotToken, fetchSchedule, refreshStats, summarizeStats, refreshOrderStats, orderSales } from '../lib/whatnot.js';
 
@@ -131,7 +131,9 @@ async function listings(request, env, ctx) {
   // Fetch from eBay.
   try {
     const cfg = readConfig(env);
-    const { items, feedback } = await fetchSellerData(cfg);
+    const fetched = await fetchSellerData(cfg);
+    const { items, held } = await holdOnToMissing(cfg, fetched.items, memo, now);
+    const feedback = fetched.feedback;
     const body = JSON.stringify({
       seller: cfg.seller,
       sellerUrl: sellerSearchUrl(cfg.seller),
@@ -139,6 +141,7 @@ async function listings(request, env, ctx) {
       updatedAt: new Date(now).toISOString(),
       count: items.length,
       items,
+      held, // cards eBay's search left out but that are still for sale: id -> when they went missing
     });
     memo = { body, savedAt: now };
     if (cache) {
@@ -269,6 +272,42 @@ async function readWhatnotStats(env, ctx) {
   const rating = r.complete && r.rating != null ? Math.round(r.rating * 100) / 100 : null;
   if (!(sales > 0) && rating == null) return null;
   return { sales: sales > 0 ? sales : null, rating };
+}
+
+// eBay's search sometimes leaves out listings that are still for sale, especially while you're
+// listing or editing. Any card from the last saved copy that's missing now is looked up on its
+// own: it stays if it's still for sale and comes off once eBay says it sold or ended.
+const MAX_LOOKUPS = 25;               // per refresh, to stay well inside Cloudflare's limits
+const HOLD_UNCONFIRMED_MS = 6 * 3600e3; // if eBay won't say either way, keep a card at most 6 hours
+
+async function holdOnToMissing(cfg, items, previous, now) {
+  let before;
+  try {
+    before = previous ? JSON.parse(previous.body) : null;
+  } catch {
+    before = null;
+  }
+  const have = new Set(items.map((i) => i.id));
+  const missing = (before?.items || []).filter(
+    (i) => !have.has(i.id) && !(i.isAuction && i.endsAt && Date.parse(i.endsAt) <= now) // ended auctions just go
+  );
+  if (!missing.length) return { items, held: {} };
+
+  const status = await checkListings(cfg, missing.slice(0, MAX_LOOKUPS).map((i) => i.id), { now }).catch(() => new Map());
+  const heldBefore = before.held || {};
+  const kept = [];
+  const held = {};
+  for (const item of missing) {
+    const since = heldBefore[item.id] || now;
+    const state = status.get(item.id) || 'unknown';
+    if (state === 'gone') continue;
+    if (state === 'unknown' && now - since > HOLD_UNCONFIRMED_MS) continue;
+    kept.push(item);
+    held[item.id] = since;
+  }
+  if (kept.length) console.log(`[listings] kept ${kept.length} card(s) eBay's search left out, still for sale`);
+  const newest = (a, b) => (Date.parse(b.listedAt || 0) || 0) - (Date.parse(a.listedAt || 0) || 0);
+  return { items: [...items, ...kept].sort(newest), held };
 }
 
 // Browsers always come back to the Worker (no-cache); the Worker decides how fresh to be.
