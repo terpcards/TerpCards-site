@@ -904,9 +904,7 @@ function tile(item) {
 
   // The title is already in the tile's text, so the photo doesn't repeat it to screen readers.
   const photo = el('div', { className: 'tile-photo' },
-    item.image
-      ? el('img', { src: item.image, alt: '', loading: 'lazy', decoding: 'async' })
-      : el('span', { className: 'tile-photo-empty' }, 'Photo on eBay')
+    item.image ? cardPhoto(item.image) : el('span', { className: 'tile-photo-empty' }, 'Photo on eBay')
   );
 
   const kind = item.isAuction
@@ -992,6 +990,28 @@ function showSkeletons(n) {
 }
 
 // Tiny DOM helper: el('a', { className, href }, 'text', childNode, ...)
+// Card photos load from terp.cards itself (the Worker passes them through from eBay), because
+// Firefox's tracking protection blocks photos from eBay's image server on other sites.
+// If that copy fails, the photo is tried straight from eBay, then a placeholder is shown.
+function photoSrc(url) {
+  try {
+    const u = new URL(url);
+    if (u.hostname === 'i.ebayimg.com' && /^\/images\/g\//.test(u.pathname)) return `/api/img${u.pathname}`;
+  } catch {}
+  return url;
+}
+
+function cardPhoto(url) {
+  const first = photoSrc(url);
+  const img = el('img', { src: first, alt: '', loading: 'lazy', decoding: 'async' });
+  let direct = first === url;
+  img.addEventListener('error', () => {
+    if (!direct) { direct = true; img.src = url; return; }
+    img.replaceWith(el('span', { className: 'tile-photo-empty' }, 'Photo on eBay'));
+  });
+  return img;
+}
+
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {

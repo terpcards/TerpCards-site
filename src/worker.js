@@ -3,6 +3,7 @@
 //   /api/ebay/connect, /api/ebay/callback -> the one-time eBay sign-in (see README)
 //   /api/whatnot   ->  your next Whatnot shows, and whether you're live right now
 //   /api/contact   ->  the contact form; emails the message to you
+//   /api/img/...   ->  your listing photos, passed through from eBay (see ebayPhoto below)
 //   everything else ->  the static page in /public (served free, the Worker isn't involved)
 
 import { EmailMessage } from 'cloudflare:email';
@@ -27,6 +28,7 @@ export default {
     if (url.pathname === '/api/contact') return contact(request, env);
     if (url.pathname === '/api/ebay/connect') return ebayConnect(request, env);
     if (url.pathname === '/api/ebay/callback') return ebayCallback(request, env);
+    if (url.pathname.startsWith('/api/img/')) return ebayPhoto(request, ctx);
     if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
 
     return env.ASSETS.fetch(request);
@@ -37,6 +39,55 @@ export default {
     ctx.waitUntil(updateWhatnotStats(env).catch((err) => console.error('[whatnot stats]', err)));
   },
 };
+
+// ---------- Listing photos ----------
+// Firefox's tracking protection (Strict mode, and Firefox on iPhone) blocks photos from eBay's
+// image server when they're shown on another site. Passing them through here makes them come
+// from terp.cards, so every browser shows them. Only eBay listing photos are passed through.
+
+const PHOTO_PATH = /^\/api\/img\/(images\/g\/[A-Za-z0-9_~-]{6,40}\/s-l\d{2,4}\.(?:jpe?g|png|webp))$/i;
+const PHOTO_MAX_AGE = 86400; // a day, in browsers and in Cloudflare's cache
+
+async function ebayPhoto(request, ctx) {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD' } });
+  }
+  const url = new URL(request.url);
+  const m = url.pathname.match(PHOTO_PATH);
+  if (!m) return new Response('Not found', { status: 404, headers: { 'Cache-Control': 'no-store' } });
+
+  const cache = typeof caches !== 'undefined' ? caches.default : null;
+  const cacheKey = new Request(`${url.origin}${url.pathname}`, { method: 'GET' });
+  if (cache) {
+    try {
+      const hit = await cache.match(cacheKey);
+      if (hit) return request.method === 'HEAD' ? new Response(null, { status: hit.status, headers: hit.headers }) : hit;
+    } catch (err) {
+      console.error('[photo] cache read failed', err);
+    }
+  }
+
+  let res;
+  try {
+    res = await fetch(`https://i.ebayimg.com/${m[1]}`, { cf: { cacheTtl: PHOTO_MAX_AGE, cacheEverything: true } });
+  } catch (err) {
+    console.error('[photo]', err);
+    return new Response(null, { status: 502, headers: { 'Cache-Control': 'no-store' } });
+  }
+  const type = res.headers.get('Content-Type') || '';
+  if (!res.ok || !type.startsWith('image/')) {
+    return new Response(null, { status: res.status === 404 ? 404 : 502, headers: { 'Cache-Control': 'no-store' } });
+  }
+  const photo = new Response(res.body, {
+    headers: {
+      'Content-Type': type,
+      'Cache-Control': `public, max-age=${PHOTO_MAX_AGE}`,
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+  if (cache) ctx.waitUntil(cache.put(cacheKey, photo.clone()).catch((err) => console.error('[photo] cache write failed', err)));
+  return request.method === 'HEAD' ? new Response(null, { headers: photo.headers }) : photo;
+}
 
 // ---------- Contact form ----------
 
