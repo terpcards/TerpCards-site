@@ -611,6 +611,7 @@ async function loadListings() {
     state.feedback = data.feedback || null;
     state.sellerUrl = data.sellerUrl || '';
     state.updatedAt = data.updatedAt ? new Date(data.updatedAt) : new Date();
+    state.sold = Array.isArray(data.sold) ? data.sold : [];
   } catch (err) {
     // No eBay keys yet (or eBay has been down for over a day). Once keys are added in
     // Cloudflare, the feed starts answering and the live grid shows up on its own.
@@ -634,6 +635,54 @@ async function loadListings() {
   showFeedback();
   $('[data-controls]').hidden = state.items.length === 0;
   render();
+  renderSold();
+}
+
+// ---------- Recently sold ----------
+// One row under the listings that scrolls sideways. Titles and photos only: no prices or dates.
+
+function renderSold() {
+  const box = $('[data-sold]');
+  const row = $('[data-sold-row]');
+  const sold = (state.sold || []).filter((s) => s && s.title && s.url).slice(0, 12);
+  row.replaceChildren(
+    ...sold.map((s) =>
+      el('li', { className: 'sold-item' },
+        el('a', { className: 'sold-card', href: s.url, target: '_blank', rel: 'noopener' },
+          el('div', { className: 'tile-photo' },
+            s.image ? cardPhoto(s.image) : el('span', { className: 'tile-photo-empty' }, 'Photo on eBay'),
+            el('span', { className: 'sold-badge' }, 'Sold')
+          ),
+          el('div', { className: 'sold-info' }, el('p', { className: 'sold-name' }, s.title))
+        )
+      )
+    )
+  );
+  box.hidden = sold.length === 0;
+  if (sold.length === 0) return;
+  if (box.dataset.wired) {
+    box.dispatchEvent(new Event('sold-update'));
+    return;
+  }
+  box.dataset.wired = '1';
+
+  const prev = $('[data-sold-prev]');
+  const next = $('[data-sold-next]');
+  const step = () => Math.max(row.clientWidth * 0.9, 160);
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const go = (dir) => row.scrollBy({ left: dir * step(), behavior: reduceMotion ? 'auto' : 'smooth' });
+  const update = () => {
+    const max = row.scrollWidth - row.clientWidth;
+    prev.disabled = row.scrollLeft <= 2;
+    next.disabled = row.scrollLeft >= max - 2;
+    box.classList.toggle('sold-fits', max <= 2);
+  };
+  prev.addEventListener('click', () => go(-1));
+  next.addEventListener('click', () => go(1));
+  row.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', update);
+  box.addEventListener('sold-update', update);
+  update();
 }
 
 // "★ 99.8% positive feedback (1,234)" next to the "On eBay now" heading.

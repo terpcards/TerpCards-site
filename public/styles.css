@@ -864,6 +864,120 @@ a { color: inherit; }
   .tile-photo-empty { font-size: 10px; }
 }
 
+/* ---------- Recently sold: one row under the listings that scrolls sideways ---------- */
+
+.sold {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid #2F353C;
+}
+.sold[hidden] { display: none; }
+.sold-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.sold-title {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(24px, 3vw, 32px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+.sold-nav { display: flex; gap: 8px; }
+.sold-fits .sold-nav { display: none; }
+.sold-btn {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 2px solid var(--rule);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-on-dark);
+  cursor: pointer;
+}
+.sold-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.sold-btn:hover:not(:disabled) { border-color: var(--chrome-lo); background: var(--panel); }
+.sold-btn:focus-visible { outline: 3px solid var(--chrome-hi); outline-offset: 2px; }
+.sold-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* About 3 cards across on phones (with the next one peeking in), 6 on wide screens. */
+.sold-row {
+  --sold-gap: 8px;
+  --sold-across: 3.3;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 10px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - (var(--sold-across) - 1) * var(--sold-gap)) / var(--sold-across));
+  gap: var(--sold-gap);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+@media (min-width: 560px) { .sold-row { --sold-gap: 14px; --sold-across: 4.4; } }
+@media (min-width: 1000px) { .sold-row { --sold-gap: 18px; --sold-across: 6; } }
+.sold-item { min-width: 0; scroll-snap-align: start; }
+.sold-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #23282E;
+  border: 1px solid #333A41;
+  border-radius: 10px;
+  overflow: hidden;
+  color: #DDE1E5;
+  text-decoration: none;
+}
+.sold-card:hover { border-color: var(--chrome-lo); }
+.sold-card:focus-visible { outline: 3px solid var(--chrome-hi); outline-offset: -3px; }
+.sold-card .tile-photo img { opacity: 0.82; }
+.sold-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 4px 8px 3px;
+  border-radius: 999px;
+  background: var(--red-fill);
+  color: var(--paper);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.sold-info {
+  flex: 1;
+  padding: 9px 10px 11px;
+  border-top: 1px solid #333A41;
+}
+/* Three lines, like the listings, so the grade at the end of a title still shows. */
+.sold-name {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  min-height: 3.9em;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+@media (max-width: 559px) {
+  .sold-info { padding: 7px 7px 8px; }
+  .sold-name { font-size: 10.5px; line-height: 1.25; min-height: 3.75em; }
+  .sold-badge { top: 5px; left: 5px; font-size: 9.5px; padding: 3px 6px 2px; }
+  .sold-btn { width: 36px; height: 36px; }
+}
+
 /* Loading placeholders */
 .tile-skel .tile-price,
 .tile-skel .tile-title,

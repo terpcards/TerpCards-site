@@ -7,8 +7,8 @@
 //   everything else ->  the static page in /public (served free, the Worker isn't involved)
 
 import { EmailMessage } from 'cloudflare:email';
-import { readConfig, fetchSellerData, checkListings, fetchItemsByLegacyId, sellerSearchUrl, feedbackProfileUrl, ConfigError } from '../lib/ebay.js';
-import { signInUrl, finishSignIn, accountUsername, activeListings, withAccount, AccountError } from '../lib/ebay-account.js';
+import { readConfig, fetchSellerData, checkListings, fetchItemsByLegacyId, sellerSearchUrl, feedbackProfileUrl, upsizeImage, ConfigError } from '../lib/ebay.js';
+import { signInUrl, finishSignIn, accountUsername, activeListings, soldListings, withAccount, AccountError } from '../lib/ebay-account.js';
 import { readSubmission, buildEmail, toMime, ContactError } from '../lib/contact.js';
 import { whatnotToken, fetchSchedule, refreshStats, summarizeStats, refreshOrderStats, orderSales } from '../lib/whatnot.js';
 
@@ -190,7 +190,7 @@ async function listings(request, env, ctx) {
     const fetched = await fetchSellerData(cfg);
     // With your eBay account connected, your account's own list decides what's for sale;
     // otherwise, cards eBay's search drops are checked one by one.
-    const account = await readAccountListings(env, cfg, now);
+    const { listings: account, sold } = await readAccountListings(env, cfg, now, knownCards(fetched.items, memo));
     const { items, held } = account
       ? await mergeWithAccount(cfg, fetched.items, account, memo, now)
       : await holdOnToMissing(cfg, fetched.items, memo, now);
@@ -206,6 +206,7 @@ async function listings(request, env, ctx) {
       count: items.length,
       items,
       held, // cards eBay's search left out but that are still for sale: id -> when they went missing
+      sold: publicSold(sold), // your last few sold cards: title, photo and link only
     });
     memo = { body, savedAt: now };
     if (cache) {
@@ -435,23 +436,41 @@ async function ebayCallback(request, env) {
 }
 
 // Your active listings and their watcher counts, or null if the account isn't connected or eBay didn't answer.
-async function readAccountListings(env, cfg, now) {
-  if (!env.WHATNOT_STATS) return null;
+async function readAccountListings(env, cfg, now, known = new Map()) {
+  if (!env.WHATNOT_STATS) return { listings: null, sold: null };
+  const history = await readSoldHistory(env);
+  const kept = history ? history.items : null;
   let saved;
   try {
     saved = await env.WHATNOT_STATS.get(ACCOUNT_KEY, 'json');
   } catch {
-    return null;
+    return { listings: null, sold: kept };
   }
-  if (!saved || !saved.refreshToken || saved.broken) return null;
+  if (!saved || !saved.refreshToken || saved.broken) return { listings: null, sold: kept };
+  // Once the sold list is filled in, only the days since the last check need asking about.
+  const days = history && history.items.length >= SOLD_SHOWN && now - history.checkedAt < 50 * 864e5
+    ? (now - history.checkedAt) / 864e5 + 1
+    : 60;
   try {
-    const { result, account, changed } = await withAccount(cfg, saved, (token) => activeListings(token), { now });
+    const { result, account, changed } = await withAccount(cfg, saved, async (token) => {
+      const active = await activeListings(token);
+      let sold = null;
+      try {
+        sold = await soldListings(token, { days });
+      } catch (err) {
+        console.error('[ebay sold]', err); // the sold row just waits for the next refresh
+      }
+      return { active, sold };
+    }, { now });
     if (changed) await env.WHATNOT_STATS.put(ACCOUNT_KEY, JSON.stringify(account));
     if (account.refreshExpiresAt && account.refreshExpiresAt - now < RENEW_WARNING_MS) {
       await alertOnce(env, 'ebay-renew', 'TerpCards site: renew the eBay sign-in',
         `The site's eBay sign-in runs out on ${new Date(account.refreshExpiresAt).toDateString()}. Open https://terp.cards/api/ebay/connect and sign in again to keep the "Most popular" sort and the account listing check working.`);
     }
-    return result.complete ? result : null;
+    const sold = result.sold && result.active.complete
+      ? await saveSold(env, history, result.sold, result.active.watch, known, now)
+      : kept;
+    return { listings: result.active.complete ? result.active : null, sold };
   } catch (err) {
     console.error('[ebay account]', err);
     if (err instanceof AccountError && err.needsSignIn) {
@@ -459,9 +478,72 @@ async function readAccountListings(env, cfg, now) {
       await alertOnce(env, 'ebay-signin', 'TerpCards site: sign in to eBay again',
         `The site's eBay sign-in stopped working (${err.message}). Open https://terp.cards/api/ebay/connect and sign in again. Until then, listings still show, without the "Most popular" sort.`);
     }
+    return { listings: null, sold: kept };
+  }
+}
+
+// ---------- Recently sold ----------
+// Your last 12 sold cards, kept in KV so the row stays full even after eBay's 60-day sold list
+// moves on. The page only gets each card's title, photo and eBay link: no prices (eBay hides
+// accepted offers, and so does the site), no dates, and nothing about buyers.
+
+const SOLD_KEY = 'ebay-sold';
+const SOLD_SHOWN = 12;
+
+async function readSoldHistory(env) {
+  try {
+    const v = await env.WHATNOT_STATS.get(SOLD_KEY, 'json');
+    return v && Array.isArray(v.items) ? v : null;
+  } catch {
     return null;
   }
 }
+
+// Titles and photos of cards that were for sale on the site, by eBay listing number, so a card
+// that just sold keeps the same photo it had in the grid.
+function knownCards(items, previous) {
+  const known = new Map();
+  let before = [];
+  try {
+    before = previous ? JSON.parse(previous.body).items || [] : [];
+  } catch {}
+  for (const i of [...before, ...items]) {
+    const id = String(i.id || '').split('|')[1];
+    if (id) known.set(id, { title: i.title, image: i.image });
+  }
+  return known;
+}
+
+async function saveSold(env, history, fresh, active, known, now) {
+  const byId = new Map((history?.items || []).map((s) => [s.id, s]));
+  for (const s of fresh) {
+    const k = known.get(s.id);
+    const old = byId.get(s.id);
+    byId.set(s.id, {
+      id: s.id,
+      title: s.title || k?.title || old?.title || null,
+      image: k?.image || old?.image || upsizeImage(s.image),
+      soldAt: s.soldAt || old?.soldAt || now,
+    });
+  }
+  const items = [...byId.values()]
+    .filter((s) => s.title && !active.has(s.id)) // a cancelled sale that went back up for sale isn't sold
+    .sort((a, b) => b.soldAt - a.soldAt)
+    .slice(0, SOLD_SHOWN);
+  const same = history && JSON.stringify(history.items) === JSON.stringify(items);
+  // Saved when it changes, and at least daily so the next check knows how far back to ask.
+  if (!same || now - history.checkedAt > 864e5) {
+    try {
+      await env.WHATNOT_STATS.put(SOLD_KEY, JSON.stringify({ checkedAt: now, items }));
+    } catch (err) {
+      console.error('[ebay sold] save failed', err);
+    }
+  }
+  return items;
+}
+
+const publicSold = (list) =>
+  (list || []).map(({ id, title, image }) => ({ id, title, image: image || null, url: `https://www.ebay.com/itm/${id}` }));
 
 // Search results, corrected by your account's own list:
 //   - anything not in your account's active list is dropped (it sold or ended)
