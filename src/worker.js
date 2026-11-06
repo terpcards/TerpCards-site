@@ -12,8 +12,9 @@ import { signInUrl, finishSignIn, accountUsername, activeListings, soldListings,
 import { readSubmission, buildEmail, toMime, ContactError } from '../lib/contact.js';
 import { whatnotToken, fetchSchedule, refreshStats, summarizeStats, refreshOrderStats, orderSales } from '../lib/whatnot.js';
 
-const FRESH_SECONDS = 900;          // refresh from eBay at most every 15 minutes
+const FRESH_SECONDS = 900;          // a saved copy of your listings counts as fresh for 15 minutes
 const STALE_LIMIT_MS = 24 * 3600e3; // if eBay is down, keep showing the last good list for up to a day
+const LISTINGS_CRON = '*/10 * * * *'; // the listings schedule; must match "triggers" in wrangler.jsonc
 
 // Kept in memory while Cloudflare keeps this Worker warm.
 let memo = null;              // { body, savedAt }
@@ -27,16 +28,22 @@ export default {
     if (url.pathname === '/api/whatnot') return whatnot(request, env, ctx);
     if (url.pathname === '/api/contact') return contact(request, env);
     if (url.pathname === '/api/ebay/connect') return ebayConnect(request, env);
-    if (url.pathname === '/api/ebay/callback') return ebayCallback(request, env);
+    if (url.pathname === '/api/ebay/callback') return ebayCallback(request, env, ctx);
     if (url.pathname.startsWith('/api/img/')) return ebayPhoto(request, ctx);
     if (url.pathname.startsWith('/api/')) return json({ error: 'Not found' }, 404);
 
     return env.ASSETS.fetch(request);
   },
 
-  // Runs on the schedule in wrangler.jsonc ("triggers"): keeps the lifetime Whatnot stats current.
+  // Runs on the schedules in wrangler.jsonc ("triggers"): every 10 minutes a fresh copy of your
+  // listings, every 15 minutes the lifetime Whatnot stats. They run separately, so each one gets
+  // Cloudflare's full per-run allowance of eBay and Whatnot requests.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(updateWhatnotStats(env).catch((err) => console.error('[whatnot stats]', err)));
+    if (event.cron === LISTINGS_CRON) {
+      ctx.waitUntil(scheduledListings(env).catch((err) => console.error('[listings] scheduled refresh failed', err)));
+    } else {
+      ctx.waitUntil(updateWhatnotStats(env).catch((err) => console.error('[whatnot stats]', err)));
+    }
   },
 };
 
@@ -148,12 +155,26 @@ async function contact(request, env) {
 }
 
 // ---------- eBay listings ----------
-// Every saved copy carries the time it was fetched from eBay (X-Listings-Saved-At), and that
-// time decides whether it's fresh. Cache expiry is never trusted on its own.
+// Visitors never wait for eBay. Every 10 minutes a scheduled run (LISTINGS_CRON) gets your listings
+// from eBay and saves the copy in Cloudflare KV, where every Cloudflare server can read it. A request
+// answers from the newest copy, this server's own or the one in KV:
+//   - under 15 minutes old: as it is
+//   - up to an hour old (a scheduled run failed): as it is, and a fresh copy is fetched in the background
+//   - older than that, or no copy at all: waits for eBay; if eBay is down, a copy up to a day old stands in
+// Every copy carries the time it was fetched from eBay, and that time decides how fresh it is.
+// Cache expiry is never trusted on its own.
 
 const FRESH_MS = FRESH_SECONDS * 1000;
+const SERVE_STALE_MS = 3600e3;   // up to an hour old: answer now, refresh in the background
+const SHARED_CHECK_MS = 30e3;    // a server looks in KV for a newer copy at most this often
+const RETRY_MS = 60e3;           // after starting a background refresh, wait this long before another
+const LISTINGS_KEY = 'listings'; // the copy in KV; the time it was fetched is in its metadata
 const SAVED_AT = 'X-Listings-Saved-At';
 const LISTINGS_VERSION = 2; // 2: calculated shipping left out of direct lookups too
+
+let memoCheckedAt = 0;  // when this server last looked in KV
+let refreshing = null;  // the eBay fetch this server is running right now, if any
+let refreshTriedAt = 0; // when this server last started one
 
 async function listings(request, env, ctx) {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -161,68 +182,28 @@ async function listings(request, env, ctx) {
   }
 
   const now = Date.now();
+  const { copy, source } = await newestCopy(env, now);
+  const age = copy ? now - copy.savedAt : Infinity;
 
-  // 1. The newest saved copy: this server's own, or the one shared by Cloudflare's servers in
-  //    this location, whichever was fetched from eBay more recently. Checking both every time
-  //    means a reload can't land on a server with an older copy and lose your newest listings.
-  const cache = typeof caches !== 'undefined' ? caches.default : null;
-  const cacheKey = new Request(new URL('/api/listings', request.url).toString(), { method: 'GET' });
-  let shared = null; // { body, savedAt }, only read when it's newer than this server's copy
-  if (cache) {
-    try {
-      const hit = await cache.match(cacheKey);
-      const savedAt = hit ? Number(hit.headers.get(SAVED_AT)) : 0;
-      if (hit && savedAt > 0 && (!memo || savedAt > memo.savedAt)) shared = { body: await hit.text(), savedAt };
-    } catch (err) {
-      console.error('[listings] cache read failed', err);
+  if (age < FRESH_MS) return ok(copy.body, request, copy.savedAt, now, source);
+
+  if (age < SERVE_STALE_MS) {
+    // The scheduled run should have replaced this by now. Answer anyway, and fetch a fresh copy
+    // after the response has gone out.
+    if (!refreshing && now - refreshTriedAt > RETRY_MS) {
+      ctx.waitUntil(refreshListings(env, copy).catch((err) => console.error('[listings]', err)));
     }
-  }
-  if (shared) memo = shared;
-  if (memo && now - memo.savedAt < FRESH_MS) {
-    return ok(memo.body, request, memo.savedAt, now, shared ? 'shared' : 'memory');
+    return ok(copy.body, request, copy.savedAt, now, source);
   }
 
-  // 2. Nothing fresh enough: ask eBay (below).
-
-  // Fetch from eBay.
   try {
-    const cfg = readConfig(env);
-    const fetched = await fetchSellerData(cfg);
-    // With your eBay account connected, your account's own list decides what's for sale;
-    // otherwise, cards eBay's search drops are checked one by one.
-    const { listings: account, sold } = await readAccountListings(env, cfg, now, knownCards(fetched.items, memo));
-    const { items, held } = account
-      ? await mergeWithAccount(cfg, fetched.items, account, memo, now)
-      : await holdOnToMissing(cfg, fetched.items, memo, now);
-    // Popularity comes only from the account; cards carried over from an earlier copy drop it.
-    if (!account) for (const i of items) delete i.popular;
-    const feedback = fetched.feedback;
-    const body = JSON.stringify({
-      version: LISTINGS_VERSION,
-      seller: cfg.seller,
-      sellerUrl: sellerSearchUrl(cfg.seller),
-      feedback: feedback ? { ...feedback, url: feedbackProfileUrl(cfg.seller) } : null,
-      updatedAt: new Date(now).toISOString(),
-      count: items.length,
-      items,
-      held, // cards eBay's search left out but that are still for sale: id -> when they went missing
-      sold: publicSold(sold), // your last few sold cards: title, photo and link only
-    });
-    memo = { body, savedAt: now };
-    if (cache) {
-      // Kept for a day so it can stand in during an eBay outage; freshness is checked by time above.
-      const copy = new Response(body, {
-        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, s-maxage=86400', [SAVED_AT]: String(now) },
-      });
-      ctx.waitUntil(cache.put(cacheKey, copy).catch((err) => console.error('[listings] cache write failed', err)));
-    }
-    return ok(body, request, now, now, 'ebay');
+    const fresh = await refreshListings(env, copy);
+    return ok(fresh.body, request, fresh.savedAt, Date.now(), 'ebay');
   } catch (err) {
     console.error('[listings]', err);
-    // eBay failed: use the newest copy we have, if it's less than a day old.
-    const backup = [memo, shared].filter(Boolean).sort((a, b) => b.savedAt - a.savedAt)[0];
-    if (backup && now - backup.savedAt < STALE_LIMIT_MS) {
-      return ok(backup.body, request, backup.savedAt, now, 'backup', { 'X-Listings-Stale': '1' });
+    // eBay failed: use the copy we have, if it's less than a day old.
+    if (copy && age < STALE_LIMIT_MS) {
+      return ok(copy.body, request, copy.savedAt, now, 'backup', { 'X-Listings-Stale': '1' });
     }
     const status = err instanceof ConfigError ? 500 : 502;
     return json(
@@ -231,6 +212,88 @@ async function listings(request, env, ctx) {
       { 'Cache-Control': 'no-store' }
     );
   }
+}
+
+// The scheduled run (LISTINGS_CRON): a fresh copy every 10 minutes, so one is always waiting.
+async function scheduledListings(env) {
+  const saved = await readSavedCopy(env);
+  const previous = [memo, saved].filter(Boolean).sort((a, b) => b.savedAt - a.savedAt)[0] || null;
+  await refreshListings(env, previous);
+}
+
+// This server's copy, or the one in KV when that's newer.
+async function newestCopy(env, now) {
+  if (memo && now - memoCheckedAt < SHARED_CHECK_MS) return { copy: memo, source: 'memory' };
+  const saved = await readSavedCopy(env);
+  memoCheckedAt = now;
+  if (saved && (!memo || saved.savedAt > memo.savedAt)) {
+    memo = saved;
+    return { copy: saved, source: 'shared' };
+  }
+  return { copy: memo, source: 'memory' };
+}
+
+async function readSavedCopy(env) {
+  if (!env.WHATNOT_STATS) return null;
+  try {
+    const { value, metadata } = await env.WHATNOT_STATS.getWithMetadata(LISTINGS_KEY, { type: 'text', cacheTtl: 60 });
+    const savedAt = Number(metadata && metadata.savedAt);
+    return value && savedAt > 0 ? { body: value, savedAt } : null;
+  } catch (err) {
+    console.error('[listings] reading the saved copy failed', err);
+    return null;
+  }
+}
+
+// Gets a fresh copy from eBay and saves it, here and in KV. If this server is already fetching
+// one, waits for that instead of asking eBay twice.
+function refreshListings(env, previous) {
+  if (!refreshing) {
+    refreshTriedAt = Date.now();
+    refreshing = fetchListings(env, previous, refreshTriedAt)
+      .then(async (copy) => {
+        if (!memo || copy.savedAt > memo.savedAt) memo = copy;
+        if (env.WHATNOT_STATS) {
+          try {
+            await env.WHATNOT_STATS.put(LISTINGS_KEY, copy.body, { metadata: { savedAt: copy.savedAt } });
+          } catch (err) {
+            console.error('[listings] saving the copy failed', err);
+          }
+        }
+        return copy;
+      })
+      .finally(() => {
+        refreshing = null;
+      });
+  }
+  return refreshing;
+}
+
+// Asks eBay. `previous` is the last copy, used to carry over cards eBay's search left out.
+async function fetchListings(env, previous, now) {
+  const cfg = readConfig(env);
+  const fetched = await fetchSellerData(cfg);
+  // With your eBay account connected, your account's own list decides what's for sale;
+  // otherwise, cards eBay's search drops are checked one by one.
+  const { listings: account, sold } = await readAccountListings(env, cfg, now, knownCards(fetched.items, previous));
+  const { items, held } = account
+    ? await mergeWithAccount(cfg, fetched.items, account, previous, now)
+    : await holdOnToMissing(cfg, fetched.items, previous, now);
+  // Popularity comes only from the account; cards carried over from an earlier copy drop it.
+  if (!account) for (const i of items) delete i.popular;
+  const feedback = fetched.feedback;
+  const body = JSON.stringify({
+    version: LISTINGS_VERSION,
+    seller: cfg.seller,
+    sellerUrl: sellerSearchUrl(cfg.seller),
+    feedback: feedback ? { ...feedback, url: feedbackProfileUrl(cfg.seller) } : null,
+    updatedAt: new Date(now).toISOString(),
+    count: items.length,
+    items,
+    held, // cards eBay's search left out but that are still for sale: id -> when they went missing
+    sold: publicSold(sold), // your last few sold cards: title, photo and link only
+  });
+  return { body, savedAt: now };
 }
 
 // ---------- Whatnot schedule ----------
@@ -410,7 +473,7 @@ async function ebayConnect(request, env) {
 }
 
 // Step 2: eBay sends you back here after you approve (or decline).
-async function ebayCallback(request, env) {
+async function ebayCallback(request, env, ctx) {
   const url = new URL(request.url);
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state') || '';
@@ -427,7 +490,7 @@ async function ebayCallback(request, env) {
       return page('Wrong eBay account', `You signed in as ${user || 'an unknown account'}, but this site is set up for ${cfg.seller}. Nothing was saved.`, 403);
     }
     await env.WHATNOT_STATS.put(ACCOUNT_KEY, JSON.stringify({ ...account, user }));
-    memo = null; // use the account on the next listings refresh
+    ctx.waitUntil(refreshListings(env, memo).catch((err) => console.error('[listings]', err))); // a fresh copy that uses the account
     return page('eBay connected', `The site now reads your listings straight from your ${user} account. It shows up within 15 minutes, and the "Most popular" sort appears once it does.`);
   } catch (err) {
     console.error('[ebay sign-in]', err);
