@@ -28,6 +28,7 @@ const SITE = {
 
   // How many cards to show per page in the listings grid.
   perPage: 24,
+  soldAutoScrollSeconds: 3, // the Recently sold row moves on one card this often
 
   // Your eBay feedback shows next to the "On eBay now" heading, but only while it's at
   // least this percent positive. Set it to 101 to hide it.
@@ -639,7 +640,10 @@ async function loadListings() {
 }
 
 // ---------- Recently sold ----------
-// One row under the listings that scrolls sideways. Titles and photos only: no prices or dates.
+// One row under the listings that moves along by itself, one card every few seconds, and goes
+// back to the start after the last card. It pauses while someone hovers, touches or tabs into it,
+// while it's off screen, and for visitors whose device asks for less motion. Titles and photos
+// only: no prices or dates.
 
 function renderSold() {
   const box = $('[data-sold]');
@@ -683,6 +687,38 @@ function renderSold() {
   window.addEventListener('resize', update);
   box.addEventListener('sold-update', update);
   update();
+
+  // Autoscroll
+  let onScreen = false;
+  let hovering = false;
+  let pausedUntil = 0; // after a swipe, scroll or arrow click, wait a while before moving again
+  const pauseForAWhile = () => { pausedUntil = Date.now() + 8000; };
+  box.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') hovering = true; });
+  box.addEventListener('pointerleave', () => { hovering = false; });
+  row.addEventListener('pointerdown', pauseForAWhile);
+  row.addEventListener('touchstart', pauseForAWhile, { passive: true });
+  row.addEventListener('wheel', pauseForAWhile, { passive: true });
+  prev.addEventListener('click', pauseForAWhile);
+  next.addEventListener('click', pauseForAWhile);
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver((entries) => { onScreen = entries.some((e) => e.isIntersecting); }, { threshold: 0.3 }).observe(row);
+  } else {
+    onScreen = true;
+  }
+  const oneCard = () => {
+    const card = row.children[0];
+    if (!card) return step();
+    return card.getBoundingClientRect().width + (parseFloat(getComputedStyle(row).columnGap) || 0);
+  };
+  const tick = () => {
+    if (reduceMotion || box.hidden || !onScreen || hovering || document.hidden || Date.now() < pausedUntil) return;
+    if (box.contains(document.activeElement)) return; // someone is tabbing through it
+    const max = row.scrollWidth - row.clientWidth;
+    if (max <= 2) return; // everything already fits
+    if (row.scrollLeft >= max - 2) row.scrollTo({ left: 0, behavior: 'smooth' });
+    else row.scrollBy({ left: oneCard(), behavior: 'smooth' });
+  };
+  setInterval(tick, Math.max(1, Number(SITE.soldAutoScrollSeconds) || 3) * 1000);
 }
 
 // "★ 99.8% positive feedback (1,234)" next to the "On eBay now" heading.
