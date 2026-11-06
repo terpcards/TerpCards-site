@@ -7,8 +7,8 @@
 //   everything else ->  the static page in /public (served free, the Worker isn't involved)
 
 import { EmailMessage } from 'cloudflare:email';
-import { readConfig, fetchSellerData, checkListings, fetchItemsByLegacyId, sellerSearchUrl, feedbackProfileUrl, upsizeImage, ConfigError } from '../lib/ebay.js';
-import { signInUrl, finishSignIn, accountUsername, activeListings, soldListings, withAccount, AccountError } from '../lib/ebay-account.js';
+import { readConfig, fetchSellerData, checkListings, fetchItemsByLegacyId, sellerSearchUrl, feedbackProfileUrl, ConfigError } from '../lib/ebay.js';
+import { signInUrl, finishSignIn, accountUsername, activeListings, soldListings, listingPhotos, withAccount, AccountError } from '../lib/ebay-account.js';
 import { readSubmission, buildEmail, toMime, ContactError } from '../lib/contact.js';
 import { whatnotToken, fetchSchedule, refreshStats, summarizeStats, refreshOrderStats, orderSales } from '../lib/whatnot.js';
 
@@ -455,12 +455,15 @@ async function readAccountListings(env, cfg, now, known = new Map()) {
     const { result, account, changed } = await withAccount(cfg, saved, async (token) => {
       const active = await activeListings(token);
       let sold = null;
+      let photos = new Map();
       try {
         sold = await soldListings(token, { days });
+        // Sold cards with no photo yet get theirs from the listing, a few per refresh.
+        photos = await listingPhotos(token, needPhotos(history, sold, known));
       } catch (err) {
         console.error('[ebay sold]', err); // the sold row just waits for the next refresh
       }
-      return { active, sold };
+      return { active, sold, photos };
     }, { now });
     if (changed) await env.WHATNOT_STATS.put(ACCOUNT_KEY, JSON.stringify(account));
     if (account.refreshExpiresAt && account.refreshExpiresAt - now < RENEW_WARNING_MS) {
@@ -468,7 +471,7 @@ async function readAccountListings(env, cfg, now, known = new Map()) {
         `The site's eBay sign-in runs out on ${new Date(account.refreshExpiresAt).toDateString()}. Open https://terp.cards/api/ebay/connect and sign in again to keep the "Most popular" sort and the account listing check working.`);
     }
     const sold = result.sold && result.active.complete
-      ? await saveSold(env, history, result.sold, result.active.watch, known, now)
+      ? await saveSold(env, history, result.sold, result.active.watch, known, result.photos, now)
       : kept;
     return { listings: result.active.complete ? result.active : null, sold };
   } catch (err) {
@@ -514,7 +517,20 @@ function knownCards(items, previous) {
   return known;
 }
 
-async function saveSold(env, history, fresh, active, known, now) {
+const SOLD_PHOTO_LOOKUPS = 6; // per refresh, to stay well inside Cloudflare's limits
+
+// Which of the cards headed for the row have no photo from the grid, the saved row or eBay's sold list.
+function needPhotos(history, fresh, known) {
+  const kept = new Map((history?.items || []).map((s) => [s.id, s]));
+  const ids = new Set();
+  for (const s of [...fresh, ...kept.values()]) {
+    if (ids.size >= SOLD_PHOTO_LOOKUPS) break;
+    if (!known.get(s.id)?.image && !kept.get(s.id)?.image && !s.image) ids.add(s.id);
+  }
+  return [...ids];
+}
+
+async function saveSold(env, history, fresh, active, known, photos, now) {
   const byId = new Map((history?.items || []).map((s) => [s.id, s]));
   for (const s of fresh) {
     const k = known.get(s.id);
@@ -522,9 +538,14 @@ async function saveSold(env, history, fresh, active, known, now) {
     byId.set(s.id, {
       id: s.id,
       title: s.title || k?.title || old?.title || null,
-      image: k?.image || old?.image || upsizeImage(s.image),
+      image: k?.image || old?.image || photos.get(s.id) || s.image || null,
       soldAt: s.soldAt || old?.soldAt || now,
     });
+  }
+  // Cards already in the row that were saved without a photo
+  for (const [id, url] of photos) {
+    const s = byId.get(id);
+    if (s && !s.image) byId.set(id, { ...s, image: url });
   }
   const items = [...byId.values()]
     .filter((s) => s.title && !active.has(s.id)) // a cancelled sale that went back up for sale isn't sold
