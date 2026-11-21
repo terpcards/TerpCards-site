@@ -549,12 +549,12 @@ async function readAccountListings(env, cfg, now, known = new Map()) {
 }
 
 // ---------- Recently sold ----------
-// Your last 12 sold cards, kept in KV so the row stays full even after eBay's 60-day sold list
+// Your last 24 sold cards, kept in KV so the row stays full even after eBay's 60-day sold list
 // moves on. The page only gets each card's title, photo and eBay link: no prices (eBay hides
 // accepted offers, and so does the site), no dates, and nothing about buyers.
 
 const SOLD_KEY = 'ebay-sold';
-const SOLD_SHOWN = 12;
+const SOLD_SHOWN = 24;
 
 async function readSoldHistory(env) {
   try {

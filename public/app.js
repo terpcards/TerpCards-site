@@ -648,7 +648,7 @@ async function loadListings() {
 function renderSold() {
   const box = $('[data-sold]');
   const row = $('[data-sold-row]');
-  const sold = (state.sold || []).filter((s) => s && s.title && s.url).slice(0, 12);
+  const sold = (state.sold || []).filter((s) => s && s.title && s.url).slice(0, 24);
   row.replaceChildren(
     ...sold.map((s) =>
       el('li', { className: 'sold-item' },
