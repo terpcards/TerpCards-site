@@ -1215,7 +1215,7 @@ a { color: inherit; }
   line-height: 1;
   text-transform: uppercase;
 }
-.foot-note { margin: 0; max-width: 56ch; color: var(--muted-on-dark); font-size: 15px; }
+.foot-note { margin: 16px 0 0; max-width: 56ch; color: var(--muted-on-dark); font-size: 15px; }
 /* Two card show photos under the logo, the same height side by side */
 .foot-photos { display: flex; gap: 10px; margin-top: 20px; }
 .foot-photos img {
